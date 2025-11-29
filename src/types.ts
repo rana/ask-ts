@@ -1,4 +1,8 @@
-// Domain types that map to user concepts
+/**
+ * Core types shared across ask-ts modules
+ */
+
+// Session types
 export type Turn = {
   number: number;
   role: 'Human' | 'AI';
@@ -10,27 +14,31 @@ export type Session = {
   lastHumanTurnIndex: number;
 };
 
-// Bedrock message format
-export type BedrockMessage = {
+// Bedrock types
+export type Message = {
   role: 'user' | 'assistant';
   content: Array<{
     text: string;
   }>;
 };
 
-// Stream events for progress tracking
 export type StreamEvent = 
   | { type: 'start' }
   | { type: 'chunk'; text: string; tokens: number }
   | { type: 'error'; error: Error }
   | { type: 'end'; totalTokens: number };
 
-// Model types we support
+// Model types
 export type ModelType = 'opus' | 'sonnet' | 'haiku';
 
-// Inference profile info
+export type ModelInfo = {
+  type: ModelType;
+  pattern: string;
+  maxTokens: number;
+};
+
+// Profile types
 export type InferenceProfile = {
   arn: string;
-  name: string;
-  modelType: ModelType;
+  modelId: string;
 };
