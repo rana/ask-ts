@@ -1,0 +1,16 @@
+{
+  "name": "ask-ts",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock": "^3.940.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.941.0"
+  }
+}

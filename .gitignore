@@ -1,0 +1,13 @@
+# dependencies (bun install)
+node_modules/
+
+# output
+out
+dist/
+
+# Finder (MacOS) folder config
+.DS_Store
+
+# ask
+ask
+session.md
