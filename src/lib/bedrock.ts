@@ -8,6 +8,7 @@ import {
   type ConverseStreamCommandInput,
 } from '@aws-sdk/client-bedrock-runtime';
 import { 
+  type InferenceProfileSummary,
   BedrockClient,
   ListInferenceProfilesCommand,
   ListFoundationModelsCommand
@@ -15,7 +16,6 @@ import {
 
 import type { ModelType, Message, StreamEvent, InferenceProfile } from '../types.ts';
 import { AskError } from './errors.ts';
-import { getModelInfo } from './models.ts';
 
 const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -49,31 +49,87 @@ function getRuntimeClient(): BedrockRuntimeClient {
   return runtimeClient;
 }
 
-/**
- * Find an inference profile for the given model type
- */
-export async function findProfile(modelType: ModelType): Promise<InferenceProfile> {
-  const client = getBedrockClient();
-  const modelInfo = getModelInfo(modelType);
+async function fetchAllInferenceProfiles(
+  client: BedrockClient
+): Promise<InferenceProfileSummary[]> {
+  const allProfiles: InferenceProfileSummary[] = [];
+  let nextToken: string | undefined;
 
-  try {
+  do {
     const command = new ListInferenceProfilesCommand({
-      maxResults: 100
+      maxResults: 100,
+      ...(nextToken && { nextToken })
     });
     
     const response = await client.send(command);
     
-    if (!response.inferenceProfileSummaries || response.inferenceProfileSummaries.length === 0) {
+    if (response.inferenceProfileSummaries) {
+      allProfiles.push(...response.inferenceProfileSummaries);
+    }
+    
+    nextToken = response.nextToken;
+  } while (nextToken);
+
+  return allProfiles;
+}
+
+function parseModelVersion(modelId: string): { major: number; minor: number; date: string } {
+  // Extract date (8 digits)
+  const dateMatch = modelId.match(/(\d{8})/);
+  const date = dateMatch?.[1] || '00000000';
+  
+  // Split by dash and find numeric segments before the date
+  const parts = modelId.split('-');
+  const dateIndex = parts.findIndex(part => part === date);
+  
+  if (dateIndex === -1) {
+    return { major: 3, minor: 0, date };
+  }
+  
+  // Look for version numbers before the date
+  const versionParts: number[] = [];
+  
+  for (let i = 0; i < dateIndex; i++) {
+    const part = parts[i];
+    // Check if this part is a pure number
+    if (part && /^\d+$/.test(part)) {
+      versionParts.push(parseInt(part, 10));
+    }
+  }
+  
+  // If no version parts found, default to 3.0
+  if (versionParts.length === 0) {
+    return { major: 3, minor: 0, date };
+  }
+  
+  // First number is major, second is minor (if exists)
+  const major = versionParts[0] || 3;
+  const minor = versionParts[1] || 0;
+  
+  return { major, minor, date };
+}
+
+export async function findProfile(modelType: ModelType): Promise<InferenceProfile> {
+  const client = getBedrockClient();
+
+  try {
+    const allProfiles = await fetchAllInferenceProfiles(client);
+    
+    if (allProfiles.length === 0) {
       throw new AskError(
         'No inference profiles found',
         'Check your AWS account has cross-region inference enabled'
       );
     }
 
-    // Collect all matching profiles
-    const matches: InferenceProfile[] = [];
+    // Find all matching models
+    const matches: Array<{
+      arn: string;
+      modelId: string;
+      version: ReturnType<typeof parseModelVersion>;
+    }> = [];
 
-    for (const profile of response.inferenceProfileSummaries) {
+    for (const profile of allProfiles) {
       if (!profile.inferenceProfileArn || !profile.models) continue;
       
       for (const model of profile.models) {
@@ -81,49 +137,63 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
         
         const modelArn = model.modelArn.toLowerCase();
         
-        // Skip if it doesn't match our model type
-        if (!modelArn.includes(modelInfo.pattern)) continue;
+        // Match by model type (opus/sonnet/haiku)
+        if (!modelArn.includes(modelType)) continue;
         
-        // Extract date from model ID (e.g., "20241022" from the ARN)
-        const dateMatch = modelArn.match(/(\d{8})/);
-        const modelDate = dateMatch?.[1] ?? '00000000';
-        
-        // Skip models before October 2024 (4.5 release timeframe)
-        if (modelDate < '20241001') continue;
+        // Extract model ID from ARN
+        const modelId = model.modelArn.split('/').pop() || model.modelArn;
+        const version = parseModelVersion(modelId);
         
         matches.push({
           arn: profile.inferenceProfileArn,
-          modelId: model.modelArn
+          modelId,
+          version
         });
       }
     }
     
-    // Sort by date descending (newest first)
+    // Sort by version (major.minor) then date
     matches.sort((a, b) => {
-      const dateA = a.modelId.match(/(\d{8})/)?.[1] ?? '0';
-      const dateB = b.modelId.match(/(\d{8})/)?.[1] ?? '0';
-      return dateB.localeCompare(dateA);
+      if (a.version.major !== b.version.major) {
+        return b.version.major - a.version.major;
+      }
+      if (a.version.minor !== b.version.minor) {
+        return b.version.minor - a.version.minor;
+      }
+      return b.version.date.localeCompare(a.version.date);
     });
     
     if (matches.length > 0) {
-      return matches[0]!;
+      const selected = matches[0]!;
+      return {
+        arn: selected.arn,
+        modelId: selected.modelId
+      };
     }
-    
-    // Fallback: Match by profile name (but warn it might be old)
-    for (const profile of response.inferenceProfileSummaries) {
+
+    // Fallback: Try to find by profile name
+    for (const profile of allProfiles) {
       if (!profile.inferenceProfileArn) continue;
       
       const profileName = profile.inferenceProfileName?.toLowerCase() || '';
       if (profileName.includes(modelType)) {
-        console.warn(`Warning: Using profile matched by name, might be older model`);
+        let modelId = `${modelType} (profile matched by name)`;
+        
+        if (profile.models && profile.models.length > 0) {
+          const firstModel = profile.models[0];
+          if (firstModel?.modelArn) {
+            modelId = firstModel.modelArn.split('/').pop() || firstModel.modelArn;
+          }
+        }
+        
         return {
           arn: profile.inferenceProfileArn,
-          modelId: `${modelInfo.pattern} (via profile name)`
+          modelId: modelId
         };
       }
     }
     
-    // If we get here, no profile found - try to help
+    // If no profile found, show available models
     const availableModels = await discoverAvailableModels();
     const availableList = Array.from(availableModels.entries())
       .map(([type, id]) => `  ${type}: ${id}`)
@@ -135,7 +205,7 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
       `This model requires a system-provided cross-region inference profile.\n\n` +
       `Solutions:\n` +
       `  1. Check AWS Bedrock console for available models\n` +
-      `  2. Try a different model: bun run src/index.ts --model sonnet\n` +
+      `  2. Try a different model: bun run src/cli.ts --model sonnet\n` +
       `  3. Contact AWS support to enable cross-region inference\n\n` +
       `Visit: https://docs.aws.amazon.com/bedrock/latest/userguide/cross-region-inference.html`
     );
@@ -189,7 +259,8 @@ async function discoverAvailableModels(): Promise<Map<string, string>> {
 export async function* streamCompletion(
   profileArn: string,
   messages: Message[],
-  maxTokens: number
+  maxTokens: number,
+  temperature: number = 1.0
 ): AsyncGenerator<StreamEvent> {
   const client = getRuntimeClient();
   
@@ -197,11 +268,11 @@ export async function* streamCompletion(
     modelId: profileArn,
     messages,
     inferenceConfig: {
-      temperature: 1.0,
+      temperature,
       maxTokens
     }
   };
-  
+
   try {
     yield { type: 'start' };
     
