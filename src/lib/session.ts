@@ -4,6 +4,7 @@
 
 import { appendFileSync } from 'node:fs';
 import type { Session, Turn } from '../types.ts';
+import { expandReferences } from './expand.ts';
 import { AskError } from './errors.ts';
 
 /**
@@ -66,6 +67,64 @@ export async function readSession(path: string): Promise<Session> {
   const file = Bun.file(path);
   const content = await file.text();
   return parseSession(content);
+}
+
+export async function expandAndSaveSession(
+  path: string,
+  session: Session
+): Promise<{ expanded: boolean; fileCount: number }> {
+  const lastHumanTurn = session.turns[session.lastHumanTurnIndex];
+  if (!lastHumanTurn) {
+    return { expanded: false, fileCount: 0 };
+  }
+  
+  // Check if the last human turn contains references
+  if (!lastHumanTurn.content.includes('[[')) {
+    return { expanded: false, fileCount: 0 };
+  }
+  
+  // Expand references (removed turnNumber parameter)
+  const { expanded, fileCount } = await expandReferences(
+    lastHumanTurn.content
+  );
+  
+  if (fileCount === 0) {
+    return { expanded: false, fileCount: 0 };
+  }
+  
+  // Read the full file content
+  const fullContent = await Bun.file(path).text();
+  
+  // Find and replace the last human turn content
+  const turnHeader = `# [${lastHumanTurn.number}] Human`;
+  const turnIndex = fullContent.lastIndexOf(turnHeader);
+  
+  if (turnIndex === -1) {
+    throw new Error('Could not find turn header in session file');
+  }
+  
+  // Find the end of this turn (start of next turn or end of file)
+  const afterHeader = turnIndex + turnHeader.length;
+  const nextTurnMatch = fullContent.indexOf('\n# [', afterHeader);
+  const endOfTurn = nextTurnMatch === -1 ? fullContent.length : nextTurnMatch;
+  
+  // Reconstruct the file with expanded content
+  const newContent = 
+    fullContent.slice(0, afterHeader) + 
+    '\n\n' + 
+    expanded.trim() + 
+    '\n' +
+    fullContent.slice(endOfTurn);
+  
+  // Write atomically using fs.rename
+  const tmpPath = `${path}.tmp-${Date.now()}`;
+  await Bun.write(tmpPath, newContent);
+  
+  // Use fs.rename instead of moveTo
+  const fs = await import('node:fs/promises');
+  await fs.rename(tmpPath, path);
+  
+  return { expanded: true, fileCount };
 }
 
 /**

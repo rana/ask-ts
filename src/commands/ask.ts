@@ -5,6 +5,7 @@ import { findProfile, streamCompletion } from '../lib/bedrock.ts';
 import { isValidModel, getModelInfo } from '../lib/models.ts';
 import { loadConfig } from '../lib/config.ts';
 import { extractRegion } from '../lib/cache.ts';
+import { expandAndSaveSession } from '../lib/session.ts';
 
 const SESSION_PATH = 'session.md';
 
@@ -36,8 +37,18 @@ export default defineCommand({
       
       await requireFile(SESSION_PATH, "Run 'ask init' to start");
       
-      const session = await readSession(SESSION_PATH);
+      let session = await readSession(SESSION_PATH);
       validateSession(session);
+
+      // Expand file references if present
+      const { expanded, fileCount } = await expandAndSaveSession(SESSION_PATH, session);
+      if (expanded) {
+        console.log(`Expanded ${fileCount} file${fileCount > 1 ? 's' : ''} in session.md`);
+        console.log();
+        
+        // Re-read the session after expansion
+        session = await readSession(SESSION_PATH);
+      }
       
       const profile = await findProfile(model);
       const region = extractRegion(profile);
