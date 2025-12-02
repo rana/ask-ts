@@ -46,8 +46,15 @@ export default defineCommand({
       
       const messages = turnsToMessages(session.turns);
       const modelInfo = getModelInfo(model);
-      
       const maxTokens = config.maxTokens || modelInfo.maxTokens;
+
+      // Add this after model display
+      if (config.maxTokens && config.maxTokens > 32000) {
+        console.log(`Max tokens: ${config.maxTokens} (experimental)`);
+      } else if (config.maxTokens) {
+        console.log(`Max tokens: ${config.maxTokens}`);
+      }
+      console.log();
       
       const lastHumanTurn = session.turns[session.lastHumanTurnIndex]!;
       const nextTurnNumber = lastHumanTurn.number + 1;

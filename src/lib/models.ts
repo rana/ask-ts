@@ -1,7 +1,3 @@
-/**
- * Model configuration and constants
- */
-
 import type { ModelType, ModelInfo } from '../types.ts';
 
 export const MODEL_PATTERNS = {
@@ -14,17 +10,17 @@ export const MODEL_INFO: Record<ModelType, ModelInfo> = {
   opus: {
     type: 'opus',
     pattern: MODEL_PATTERNS.opus,
-    maxTokens: 4096
+    maxTokens: 64000
   },
   sonnet: {
-    type: 'sonnet', 
+    type: 'sonnet',
     pattern: MODEL_PATTERNS.sonnet,
-    maxTokens: 4096
+    maxTokens: 64000
   },
   haiku: {
     type: 'haiku',
     pattern: MODEL_PATTERNS.haiku,
-    maxTokens: 4096
+    maxTokens: 64000
   }
 };
 

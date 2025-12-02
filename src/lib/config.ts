@@ -49,7 +49,9 @@ function formatConfigWithComments(config: Config): string {
   if (config.maxTokens !== undefined) {
     lines.push(',');
     lines.push('  ');
-    lines.push('  // Maximum tokens in response');
+    lines.push('  // Maximum output tokens (default: 32000)');
+    lines.push('  // Note: AWS Bedrock may enforce lower limits than model capabilities');
+    lines.push('  // Safe range: 1000-32000, experimental: up to 64000');
     lines.push(`  "maxTokens": ${config.maxTokens}`);
   }
   
@@ -64,7 +66,7 @@ function formatConfigWithComments(config: Config): string {
     lines.push('');
     lines.push('  ');
     lines.push('  // Optional settings:');
-    lines.push('  // "maxTokens": 4096,');
+    lines.push('  // "maxTokens": 32000,  // Safe: 1000-32000, experimental: up to 64000');
     lines.push('  // "region": "us-west-2"');
   }
   
@@ -73,6 +75,7 @@ function formatConfigWithComments(config: Config): string {
   
   return lines.join('\n');
 }
+
 
 export async function loadConfig(): Promise<Config> {
   const configPath = getConfigPath();

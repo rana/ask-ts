@@ -288,12 +288,20 @@ export async function* streamCompletion(
 ): AsyncGenerator<StreamEvent> {
   const client = getRuntimeClient();
   
+  // Cap maxTokens to known safe limit
+  const effectiveMaxTokens = Math.min(maxTokens, 64000);
+  
+  // Log if we're capping the value
+  if (maxTokens > 64000) {
+    console.log(`Note: Capping maxTokens from ${maxTokens} to ${effectiveMaxTokens} (AWS limit)`);
+  }
+  
   const input: ConverseStreamCommandInput = {
     modelId: profileArn,
     messages,
     inferenceConfig: {
       temperature,
-      maxTokens
+      maxTokens: effectiveMaxTokens
     }
   };
 
