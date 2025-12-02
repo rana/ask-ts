@@ -1,7 +1,3 @@
-/**
- * AWS Bedrock operations - hides all AWS complexity
- */
-
 import { 
   BedrockRuntimeClient, 
   ConverseStreamCommand,
@@ -16,10 +12,12 @@ import {
 
 import type { ModelType, Message, StreamEvent, InferenceProfile } from '../types.ts';
 import { AskError } from './errors.ts';
+import { withRetry } from './retry.ts';
+import { getCachedProfile, saveProfileCache } from './cache.ts';
+import { loadConfig } from './config.ts';
 
 const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-// Cached clients
 let bedrockClient: BedrockClient | null = null;
 let runtimeClient: BedrockRuntimeClient | null = null;
 
@@ -61,7 +59,7 @@ async function fetchAllInferenceProfiles(
       ...(nextToken && { nextToken })
     });
     
-    const response = await client.send(command);
+    const response = await withRetry(() => client.send(command));
     
     if (response.inferenceProfileSummaries) {
       allProfiles.push(...response.inferenceProfileSummaries);
@@ -74,11 +72,9 @@ async function fetchAllInferenceProfiles(
 }
 
 function parseModelVersion(modelId: string): { major: number; minor: number; date: string } {
-  // Extract date (8 digits)
   const dateMatch = modelId.match(/(\d{8})/);
   const date = dateMatch?.[1] || '00000000';
   
-  // Split by dash and find numeric segments before the date
   const parts = modelId.split('-');
   const dateIndex = parts.findIndex(part => part === date);
   
@@ -86,23 +82,19 @@ function parseModelVersion(modelId: string): { major: number; minor: number; dat
     return { major: 3, minor: 0, date };
   }
   
-  // Look for version numbers before the date
   const versionParts: number[] = [];
   
   for (let i = 0; i < dateIndex; i++) {
     const part = parts[i];
-    // Check if this part is a pure number
     if (part && /^\d+$/.test(part)) {
       versionParts.push(parseInt(part, 10));
     }
   }
   
-  // If no version parts found, default to 3.0
   if (versionParts.length === 0) {
     return { major: 3, minor: 0, date };
   }
   
-  // First number is major, second is minor (if exists)
   const major = versionParts[0] || 3;
   const minor = versionParts[1] || 0;
   
@@ -110,7 +102,18 @@ function parseModelVersion(modelId: string): { major: number; minor: number; dat
 }
 
 export async function findProfile(modelType: ModelType): Promise<InferenceProfile> {
+  // Check cache first
+  const cached = await getCachedProfile(modelType);
+  if (cached) {
+    console.log('Using cached inference profile');
+    return cached;
+  }
+
+  console.log('Discovering AWS inference profiles...');
+  
   const client = getBedrockClient();
+  const config = await loadConfig();
+  const preferredRegion = config.region;
 
   try {
     const allProfiles = await fetchAllInferenceProfiles(client);
@@ -122,38 +125,49 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
       );
     }
 
-    // Find all matching models
+    console.log(`Found ${allProfiles.length} profiles, filtering for ${modelType} models...`);
+
     const matches: Array<{
       arn: string;
       modelId: string;
       version: ReturnType<typeof parseModelVersion>;
+      region: string;
     }> = [];
 
     for (const profile of allProfiles) {
       if (!profile.inferenceProfileArn || !profile.models) continue;
+      
+      const region = profile.inferenceProfileArn.match(/arn:aws:bedrock:([^:]+):/)?.[1] || 'unknown';
       
       for (const model of profile.models) {
         if (!model.modelArn) continue;
         
         const modelArn = model.modelArn.toLowerCase();
         
-        // Match by model type (opus/sonnet/haiku)
         if (!modelArn.includes(modelType)) continue;
         
-        // Extract model ID from ARN
         const modelId = model.modelArn.split('/').pop() || model.modelArn;
         const version = parseModelVersion(modelId);
         
         matches.push({
           arn: profile.inferenceProfileArn,
           modelId,
-          version
+          version,
+          region
         });
       }
     }
     
-    // Sort by version (major.minor) then date
     matches.sort((a, b) => {
+      // First sort by region preference if configured
+      if (preferredRegion) {
+        const aPreferred = a.region === preferredRegion;
+        const bPreferred = b.region === preferredRegion;
+        if (aPreferred && !bPreferred) return -1;
+        if (!aPreferred && bPreferred) return 1;
+      }
+      
+      // Then by version
       if (a.version.major !== b.version.major) {
         return b.version.major - a.version.major;
       }
@@ -165,13 +179,31 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
     
     if (matches.length > 0) {
       const selected = matches[0]!;
-      return {
+      const profile = {
         arn: selected.arn,
         modelId: selected.modelId
       };
+      
+      // Cache all discovered model types
+      const profilesToCache: Partial<Record<ModelType, InferenceProfile>> = {};
+      for (const modelType of ['opus', 'sonnet', 'haiku'] as ModelType[]) {
+        const typeMatch = matches.find(m => m.modelId.toLowerCase().includes(modelType));
+        if (typeMatch) {
+          profilesToCache[modelType] = {
+            arn: typeMatch.arn,
+            modelId: typeMatch.modelId
+          };
+        }
+      }
+      
+      if (Object.keys(profilesToCache).length > 0) {
+        await saveProfileCache(profilesToCache as Record<ModelType, InferenceProfile>);
+      }
+      
+      return profile;
     }
 
-    // Fallback: Try to find by profile name
+    // Fallback: try profile name matching
     for (const profile of allProfiles) {
       if (!profile.inferenceProfileArn) continue;
       
@@ -193,7 +225,6 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
       }
     }
     
-    // If no profile found, show available models
     const availableModels = await discoverAvailableModels();
     const availableList = Array.from(availableModels.entries())
       .map(([type, id]) => `  ${type}: ${id}`)
@@ -219,16 +250,13 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
   }
 }
 
-/**
- * Discover what models are available (for error messages)
- */
 async function discoverAvailableModels(): Promise<Map<string, string>> {
   const client = getBedrockClient();
   const modelMap = new Map<string, string>();
 
   try {
     const command = new ListFoundationModelsCommand({});
-    const response = await client.send(command);
+    const response = await withRetry(() => client.send(command));
     
     if (response.modelSummaries) {
       for (const model of response.modelSummaries) {
@@ -248,14 +276,10 @@ async function discoverAvailableModels(): Promise<Map<string, string>> {
     
     return modelMap;
   } catch (error) {
-    // Non-critical, just for helpful error messages
     return modelMap;
   }
 }
 
-/**
- * Stream a completion from Bedrock
- */
 export async function* streamCompletion(
   profileArn: string,
   messages: Message[],
@@ -278,14 +302,15 @@ export async function* streamCompletion(
     
     const command = new ConverseStreamCommand(input);
     
-    // Setup timeout handling
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
     
     try {
-      const response = await client.send(command, {
-        abortSignal: controller.signal
-      });
+      const response = await withRetry(() => 
+        client.send(command, {
+          abortSignal: controller.signal
+        })
+      );
       
       clearTimeout(timeoutId);
       
@@ -293,7 +318,6 @@ export async function* streamCompletion(
       
       if (response.stream) {
         for await (const event of response.stream) {
-          // Handle text chunks
           if (event.contentBlockDelta?.delta?.text) {
             const text = event.contentBlockDelta.delta.text;
             const tokens = Math.ceil(text.length / 4); // Rough estimate
@@ -301,7 +325,6 @@ export async function* streamCompletion(
             yield { type: 'chunk', text, tokens: totalTokens };
           }
           
-          // Update token count from metadata
           if (event.metadata?.usage?.outputTokens) {
             totalTokens = event.metadata.usage.outputTokens;
           }

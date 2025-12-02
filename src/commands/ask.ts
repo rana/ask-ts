@@ -4,6 +4,7 @@ import { readSession, validateSession, SessionWriter, turnsToMessages } from '..
 import { findProfile, streamCompletion } from '../lib/bedrock.ts';
 import { isValidModel, getModelInfo } from '../lib/models.ts';
 import { loadConfig } from '../lib/config.ts';
+import { extractRegion } from '../lib/cache.ts';
 
 const SESSION_PATH = 'session.md';
 
@@ -22,10 +23,8 @@ export default defineCommand({
   },
   async run({ args }) {
     try {
-      // Load config
       const config = await loadConfig();
       
-      // CLI overrides config
       const modelArg = args.model as string | undefined;
       const model = modelArg || config.model;
       
@@ -41,13 +40,13 @@ export default defineCommand({
       validateSession(session);
       
       const profile = await findProfile(model);
-      console.log(`Model: ${profile.modelId}`);
+      const region = extractRegion(profile);
+      console.log(`Model: ${profile.modelId} (${region})`);
       console.log();
       
       const messages = turnsToMessages(session.turns);
       const modelInfo = getModelInfo(model);
       
-      // Use config maxTokens if set, otherwise model default
       const maxTokens = config.maxTokens || modelInfo.maxTokens;
       
       const lastHumanTurn = session.turns[session.lastHumanTurnIndex]!;

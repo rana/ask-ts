@@ -27,7 +27,6 @@ export default defineCommand({
       const action = args.action as string | undefined;
       const value = args.value as string | undefined;
       
-      // No args = show current config
       if (!action) {
         const config = await loadConfig();
         const configPath = getConfigPath();
@@ -42,10 +41,15 @@ export default defineCommand({
           console.log(chalk.cyan('maxTokens:') + `   ${chalk.dim('(AWS default)')}`);
         }
         
+        if (config.region) {
+          console.log(chalk.cyan('region:') + `      ${config.region}`);
+        } else {
+          console.log(chalk.cyan('region:') + `      ${chalk.dim('(no preference)')}`);
+        }
+        
         return;
       }
       
-      // Reset command
       if (action === 'reset') {
         const defaults = ConfigSchema.parse({});
         await saveConfig(defaults);
@@ -53,7 +57,6 @@ export default defineCommand({
         return;
       }
       
-      // Field updates
       if (!value) {
         throw new AskError(
           `Missing value for '${action}'`,
@@ -101,10 +104,23 @@ export default defineCommand({
           break;
         }
         
+        case 'region': {
+          // Basic validation - AWS regions follow pattern
+          if (!/^[a-z]{2}-[a-z]+-\d+$/.test(value)) {
+            throw new AskError(
+              'Invalid AWS region format',
+              'Example: us-west-2, eu-central-1'
+            );
+          }
+          await updateConfig('region', value);
+          console.log(chalk.green('✓') + ` Region preference set to ${value}`);
+          break;
+        }
+        
         default:
           throw new AskError(
             `Unknown config field: ${action}`,
-            'Valid fields: model, temperature, tokens'
+            'Valid fields: model, temperature, tokens, region'
           );
       }
       
