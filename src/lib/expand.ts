@@ -1,12 +1,14 @@
+import { filterContent, shouldFilter } from './filter.ts';
+import { loadConfig } from './config.ts';
+
 export async function expandReferences(
   content: string
 ): Promise<{ expanded: string; fileCount: number }> {
-  // This regex matches unescaped brackets but NOT escaped brackets
-  const pattern = /(?<!\\)\[\[([^\]]+)\]\](?!\\)/g
+  // Simple pattern - just match \[\[anything\]\]
+  const pattern = /\[\[([^\]]+)\]\]/g
   let expanded = content
   let fileCount = 0
   
-  // Process each reference
   for (const [match, ref] of content.matchAll(pattern)) {
     if (!ref) continue;
     
@@ -15,7 +17,6 @@ export async function expandReferences(
       expanded = expanded.replace(match, text)
       fileCount += files
     } catch (error) {
-      // Errors go right in the document - visible and clear
       const message = error instanceof Error ? error.message : 'Unknown error'
       expanded = expanded.replace(match, `\n❌ Error: ${ref} - ${message}\n`)
     }
@@ -28,16 +29,13 @@ async function expandReference(ref: string): Promise<{ text: string; files: numb
   const isRecursive = ref.endsWith('/**/')
   const isDirectory = ref.endsWith('/') || isRecursive
   
-  // Check if it's actually a directory even without trailing slash
   if (!isDirectory) {
     try {
       const stat = await Bun.file(ref).stat()
       if (stat.isDirectory()) {
-        // Treat as directory
         return expandDirectory(ref, false)
       }
     } catch {
-      // Not a directory, continue as file
     }
   }
   
@@ -54,19 +52,16 @@ async function expandFile(path: string): Promise<{ text: string; files: number }
   let file = Bun.file(path);
   
   if (!await file.exists()) {
-    // Try case-insensitive match by checking directory contents
     const lastSlash = path.lastIndexOf('/');
     const dir = lastSlash >= 0 ? path.substring(0, lastSlash) : '.';
     const filename = lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
     
     try {
-      // Read the directory
       const dirPath = dir || '.';
       const entries = await Array.fromAsync(
         new Bun.Glob(`${dirPath}/*`).scan({ onlyFiles: true })
       );
       
-      // Find case-insensitive match
       const match = entries.find(entry => {
         const entryName = entry.substring(entry.lastIndexOf('/') + 1);
         return entryName.toLowerCase() === filename.toLowerCase();
@@ -83,16 +78,25 @@ async function expandFile(path: string): Promise<{ text: string; files: number }
     }
   }
   
-  // Simple binary check - just look for null bytes
   const preview = new Uint8Array(await file.slice(0, 512).arrayBuffer());
   if (preview.includes(0)) {
     throw new Error('Binary file');
   }
   
-  const content = await file.text();
+  let content = await file.text();
+  
+  // Apply filtering if enabled
+  const config = await loadConfig();
+  if (shouldFilter(config)) {
+    content = filterContent(content, actualPath);
+  }
+  
+  // Auto-escape any [[...]] patterns in the expanded content
+  content = content.replace(/\[\[/g, '[\u200B[');
+  content = content.replace(/\]\]/g, ']\u200B]');
+  
   const lang = actualPath.split('.').pop() || '';
   
-  // Use 6 ticks if content contains triple backticks
   const needsSixTicks = content.includes('```');
   const fence = needsSixTicks ? '``````' : '```';
   
@@ -113,7 +117,6 @@ async function expandDirectory(
   let fileCount = 0
   let hasSubdirs = false
   
-  // Simple exclusions - just the obvious ones
   const skip = (path: string) => {
     const parts = path.split('/')
     return parts.some(p => 
@@ -123,7 +126,6 @@ async function expandDirectory(
     )
   }
   
-  // Check for subdirectories if not recursive
   if (!recursive) {
     for await (const entry of new Bun.Glob(`${path}/*`).scan()) {
       if (skip(entry)) continue
@@ -143,20 +145,17 @@ async function expandDirectory(
       sections.push(text)
       fileCount++
     } catch {
-      // Skip files that can't be read - probably binary or permissions
       continue
     }
   }
   
   if (sections.length === 0) {
     if (hasSubdirs) {
-      // Has subdirectories but no direct files
       return {
-        text: `\n### ${path}/\n\n*(contains only subdirectories - use [[${path}/**/]] for recursive)*\n`,
+        text: `\n### ${path}/\n\n*(contains only subdirectories - use \[\[${path}/**/\]\] for recursive)*\n`,
         files: 0
       }
     } else {
-      // Empty directory
       return {
         text: `\n### ${path}/\n\n*(empty directory)*\n`,
         files: 0

@@ -15,6 +15,8 @@ import { AskError } from './errors.ts';
 import { withRetry } from './retry.ts';
 import { getCachedProfile, saveProfileCache } from './cache.ts';
 import { loadConfig } from './config.ts';
+import { output } from '../lib/output.ts';
+
 
 const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -105,11 +107,11 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
   // Check cache first
   const cached = await getCachedProfile(modelType);
   if (cached) {
-    console.log('Using cached inference profile');
+    output.info('Using cached inference profile');
     return cached;
   }
 
-  console.log('Discovering AWS inference profiles...');
+  output.info('Discovering AWS inference profiles...');
   
   const client = getBedrockClient();
   const config = await loadConfig();
@@ -125,8 +127,8 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
       );
     }
 
-    console.log(`Found ${allProfiles.length} profiles, filtering for ${modelType} models...`);
-
+    output.info(`Found ${allProfiles.length} profiles, filtering for ${modelType} models...`);
+    
     const matches: Array<{
       arn: string;
       modelId: string;
