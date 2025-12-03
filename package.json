@@ -1,5 +1,5 @@
 {
-  "name": "ask-ts",
+  "name": "ask",
   "version": "0.1.0",
   "module": "src/index.ts",
   "type": "module",
@@ -9,11 +9,16 @@
   },
   "scripts": {
     "dev": "bun run src/cli.ts",
-    "build": "bun build --compile --target=bun src/cli.ts --outfile=ask",
+    "build": "bun build --compile src/cli.ts --outfile=ask",
     "test": "bun test",
-    "check": "bun tsc --noEmit"
+    "check": "tsc --noEmit",
+    "lint": "biome check .",
+    "fix": "biome check --write .",
+    "format": "biome format --write .",
+    "ci": "bun run check && bun run lint"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.8",
     "@types/bun": "latest"
   },
   "peerDependencies": {

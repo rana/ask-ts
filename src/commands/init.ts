@@ -1,45 +1,39 @@
 import { defineCommand } from 'citty';
-import { AskError, exitWithError } from '../lib/errors.ts';
 import { ensureConfig } from '../lib/config.ts';
-import chalk from 'chalk';
+import { AskError, exitWithError } from '../lib/errors.ts';
+import { output } from '../lib/output.ts';
 
-const SESSION_PATH = 'session.md';
+const SESSION_FILE = 'session.md';
 
 export default defineCommand({
   meta: {
     name: 'init',
-    description: 'Initialize a new session.md file'
+    description: 'Initialize a new session.md file',
   },
   async run() {
     try {
-      // Check if session.md already exists
-      const file = Bun.file(SESSION_PATH);
+      const file = Bun.file(SESSION_FILE);
       if (await file.exists()) {
-        throw new AskError(
-          'session.md already exists',
-          'Delete it to start fresh'
-        );
+        throw new AskError('session.md already exists', 'Delete it to start fresh');
       }
-      
-      // Create session.md with proper initial structure
+
       const content = '# [1] Human\n\n\n';
-      await Bun.write(SESSION_PATH, content);
-      
-      console.log(chalk.green('✓') + ' Created session.md');
-      
-      // Ensure config exists (but don't mention it unless there's an error)
+      await Bun.write(SESSION_FILE, content);
+
+      output.success('Created session.md');
+
       try {
         await ensureConfig();
       } catch (error) {
-        console.log(chalk.yellow('Note:') + ' Could not create config file:', error);
+        output.warning(`Could not create config file: ${error}`);
       }
-      
-      console.log('\nNext steps:');
-      console.log('1. Add your question to session.md');
-      console.log('2. Run: ask');
-      
+
+      output.info('');
+      output.info('Next steps:');
+      output.info('1. Add your question to session.md');
+      output.info('2. Run: ask');
     } catch (error) {
       exitWithError(error);
     }
-  }
+  },
 });

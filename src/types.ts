@@ -22,7 +22,7 @@ export type Message = {
   }>;
 };
 
-export type StreamEvent = 
+export type StreamEvent =
   | { type: 'start' }
   | { type: 'chunk'; text: string; tokens: number }
   | { type: 'error'; error: Error }
