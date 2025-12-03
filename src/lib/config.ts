@@ -7,7 +7,8 @@ export const ConfigSchema = z.object({
   model: z.enum(['opus', 'sonnet', 'haiku']).default('opus'),
   temperature: z.number().min(0).max(1).default(1.0),
   maxTokens: z.number().int().positive().max(200000).optional(),
-  region: z.string().optional()
+  region: z.string().optional(),
+  filter: z.boolean().default(true)
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -60,6 +61,13 @@ function formatConfigWithComments(config: Config): string {
     lines.push('  ');
     lines.push('  // Preferred AWS region for inference profiles');
     lines.push(`  "region": "${config.region}"`);
+  }
+
+  if (config.filter !== undefined) {
+    lines.push(',');
+    lines.push('  ');
+    lines.push('  // Filter comments and headers from expanded files');
+    lines.push(`  "filter": ${config.filter}`);
   }
   
   if (config.maxTokens === undefined && config.region === undefined) {

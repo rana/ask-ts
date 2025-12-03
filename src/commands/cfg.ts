@@ -116,11 +116,20 @@ export default defineCommand({
           console.log(chalk.green('✓') + ` Region preference set to ${value}`);
           break;
         }
+
+        case 'filter': {
+          const enable = value.toLowerCase() === 'on' || 
+                        value.toLowerCase() === 'true' ||
+                        value.toLowerCase() === 'yes';
+          await updateConfig('filter', enable);
+          console.log(chalk.green('✓') + ` Content filtering ${enable ? 'enabled' : 'disabled'}`);
+          break;
+        }
         
         default:
           throw new AskError(
             `Unknown config field: ${action}`,
-            'Valid fields: model, temperature, tokens, region'
+            'Valid fields: model, temperature, tokens, region, filter'
           );
       }
       

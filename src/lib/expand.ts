@@ -1,3 +1,6 @@
+import { filterContent, shouldFilter } from './filter.ts';
+import { loadConfig } from './config.ts';
+
 export async function expandReferences(
   content: string
 ): Promise<{ expanded: string; fileCount: number }> {
@@ -82,11 +85,16 @@ async function expandFile(path: string): Promise<{ text: string; files: number }
   
   let content = await file.text();
   
-  // Auto-escape double bracket patterns with zero-width spaces
-  // This prevents them from being matched in future expansions
+  // Apply filtering if enabled
+  const config = await loadConfig();
+  if (shouldFilter(config)) {
+    content = filterContent(content, actualPath);
+  }
+  
+  // Auto-escape any [[...]] patterns in the expanded content
   content = content.replace(/\[\[/g, '[\u200B[');
   content = content.replace(/\]\]/g, ']\u200B]');
-
+  
   const lang = actualPath.split('.').pop() || '';
   
   const needsSixTicks = content.includes('```');
