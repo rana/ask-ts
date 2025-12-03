@@ -78,12 +78,12 @@ export async function expandAndSaveSession(
     return { expanded: false, fileCount: 0 };
   }
   
-  // Check if the last human turn contains references
-  if (!lastHumanTurn.content.includes('[[')) {
+  // Use the same pattern as expandReferences to check for actual references
+  const pattern = /\[\[([^\]]+)\]\]/g;
+  if (!pattern.test(lastHumanTurn.content)) {
     return { expanded: false, fileCount: 0 };
   }
   
-  // Expand references (removed turnNumber parameter)
   const { expanded, fileCount } = await expandReferences(
     lastHumanTurn.content
   );
@@ -91,7 +91,7 @@ export async function expandAndSaveSession(
   if (fileCount === 0) {
     return { expanded: false, fileCount: 0 };
   }
-  
+    
   // Read the full file content
   const fullContent = await Bun.file(path).text();
   
