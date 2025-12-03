@@ -6,6 +6,7 @@ import { isValidModel, getModelInfo } from '../lib/models.ts';
 import { loadConfig } from '../lib/config.ts';
 import { extractRegion } from '../lib/cache.ts';
 import { expandAndSaveSession, refreshExpandedFiles } from '../lib/session.ts';
+import { estimateTokens } from '../lib/tokens.ts';
 
 const SESSION_PATH = 'session.md';
 
@@ -64,7 +65,6 @@ export default defineCommand({
       const { expanded, fileCount } = await expandAndSaveSession(SESSION_PATH, session);
       if (expanded) {
         console.log(`Expanded ${fileCount} file${fileCount > 1 ? 's' : ''} in session.md`);
-        console.log();
         
         // Re-read the session after expansion
         session = await readSession(SESSION_PATH);
@@ -73,19 +73,20 @@ export default defineCommand({
       const profile = await findProfile(model);
       const region = extractRegion(profile);
       console.log(`Model: ${profile.modelId} (${region})`);
-      console.log();
       
       const messages = turnsToMessages(session.turns);
       const modelInfo = getModelInfo(model);
       const maxTokens = config.maxTokens || modelInfo.maxTokens;
+      const inputTokens = estimateTokens(messages);
 
-      // Add this after model display
-      if (config.maxTokens && config.maxTokens > 32000) {
-        console.log(`Max tokens: ${config.maxTokens} (experimental)`);
-      } else if (config.maxTokens) {
+      console.log(`Sending: ${inputTokens.toLocaleString()} input tokens (${session.turns.length} turns)`);
+      if (inputTokens > 150_000) {
+        console.log('⚠ Large context - consider starting fresh with: ask init');
+      }
+
+      if (config.maxTokens) {
         console.log(`Max tokens: ${config.maxTokens}`);
       }
-      console.log();
       
       const lastHumanTurn = session.turns[session.lastHumanTurnIndex]!;
       const nextTurnNumber = lastHumanTurn.number + 1;
@@ -134,7 +135,7 @@ export default defineCommand({
         if (interrupted) {
           console.log(`Response interrupted after ${totalTokens} tokens`);
         } else {
-          console.log(`Response complete: ${totalTokens} tokens`);
+          console.log(`Response complete: ${totalTokens} output tokens`);
         }
         
       } catch (error) {
