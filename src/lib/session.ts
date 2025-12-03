@@ -91,7 +91,7 @@ export async function expandAndSaveSession(
   if (fileCount === 0) {
     return { expanded: false, fileCount: 0 };
   }
-    
+
   // Read the full file content
   const fullContent = await Bun.file(path).text();
   
@@ -227,4 +227,128 @@ export function turnsToMessages(turns: Turn[]): import('../types.ts').Message[] 
       text: turn.content
     }]
   }));
+}
+
+interface FileBlock {
+  start: number;
+  end: number;
+  filePath: string;
+  fence: string;
+  lang: string;
+}
+
+export async function refreshExpandedFiles(
+  path: string
+): Promise<{ refreshed: boolean; fileCount: number }> {
+  const content = await Bun.file(path).text();
+  const blocks = findFileBlocks(content);
+  
+  if (blocks.length === 0) {
+    return { refreshed: false, fileCount: 0 };
+  }
+  
+  console.log(`Found ${blocks.length} file references to refresh...`);
+  
+  let lines = content.split('\n');
+  let fileCount = 0;
+  let offset = 0;
+  
+  for (const block of blocks) {
+    try {
+      const file = Bun.file(block.filePath);
+      if (!await file.exists()) {
+        console.log(`⚠ Skipping ${block.filePath} - file no longer exists`);
+        continue;
+      }
+      
+      let newContent = await file.text();
+      
+      // Apply escaping
+      newContent = newContent.replace(/\[\[/g, '[\u200B[');
+      newContent = newContent.replace(/\]\]/g, ']\u200B]');
+      
+      // Build replacement lines
+      const fence = newContent.includes('```') ? '``````' : '```';
+      const newLines = [
+        `### ${block.filePath}`,
+        `${fence}${block.lang}`,
+        ...newContent.split('\n'),
+        fence
+      ];
+      
+      // Replace with offset adjustment
+      lines.splice(
+        block.start + offset,
+        block.end - block.start + 1,
+        ...newLines
+      );
+      
+      offset += newLines.length - (block.end - block.start + 1);
+      fileCount++;
+      
+    } catch (error) {
+      console.log(`⚠ Error refreshing ${block.filePath}: ${error}`);
+    }
+  }
+  
+  if (fileCount > 0) {
+    const updatedContent = lines.join('\n');
+    
+    const tmpPath = `${path}.tmp-${Date.now()}`;
+    await Bun.write(tmpPath, updatedContent);
+    
+    const fs = await import('node:fs/promises');
+    await fs.rename(tmpPath, path);
+    
+    return { refreshed: true, fileCount };
+  }
+  
+  return { refreshed: false, fileCount: 0 };
+}
+
+function findFileBlocks(content: string): FileBlock[] {
+  const lines = content.split('\n');
+  const blocks: FileBlock[] = [];
+  
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    // Look for: ### filepath
+    if (line?.startsWith('### ')) {
+      const filePath = line.substring(4).trim();
+      const start = i;
+      
+      // Next line should be code fence
+      i++;
+      if (i >= lines.length) break;
+      
+      const fenceLine = lines[i];
+      const fenceMatch = fenceLine?.match(/^(`{3,})(\w*)/);
+      if (!fenceMatch) continue;
+      
+      const fence = fenceMatch[1] || '```';
+      const lang = fenceMatch[2] || '';
+      
+      // Find closing fence
+      i++;
+      while (i < lines.length && lines[i] !== fence) {
+        i++;
+      }
+      
+      if (i < lines.length) {
+        blocks.push({
+          start,
+          end: i,
+          filePath,
+          fence,
+          lang
+        });
+      }
+    }
+    
+    i++;
+  }
+  
+  return blocks;
 }

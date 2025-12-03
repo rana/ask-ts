@@ -5,7 +5,7 @@ import { findProfile, streamCompletion } from '../lib/bedrock.ts';
 import { isValidModel, getModelInfo } from '../lib/models.ts';
 import { loadConfig } from '../lib/config.ts';
 import { extractRegion } from '../lib/cache.ts';
-import { expandAndSaveSession } from '../lib/session.ts';
+import { expandAndSaveSession, refreshExpandedFiles } from '../lib/session.ts';
 
 const SESSION_PATH = 'session.md';
 
@@ -20,6 +20,12 @@ export default defineCommand({
       description: 'Model to use (opus/sonnet/haiku)',
       alias: 'm',
       required: false
+    },
+    refresh: {
+      type: 'boolean',
+      description: 'Re-expand all file references with current content',
+      alias: 'r',
+      default: false
     }
   },
   async run({ args }) {
@@ -28,6 +34,7 @@ export default defineCommand({
       
       const modelArg = args.model as string | undefined;
       const model = modelArg || config.model;
+      const refresh = args.refresh as boolean;
       
       if (!isValidModel(model)) {
         exitWithError(
@@ -36,6 +43,19 @@ export default defineCommand({
       }
       
       await requireFile(SESSION_PATH, "Run 'ask init' to start");
+      
+      // Handle refresh before normal flow
+      if (refresh) {
+        console.log('Refreshing file references...');
+        const { refreshed, fileCount } = await refreshExpandedFiles(SESSION_PATH);
+        if (refreshed) {
+          console.log(`✓ Refreshed ${fileCount} file${fileCount > 1 ? 's' : ''}`);
+          console.log();
+        } else {
+          console.log('No file references found to refresh');
+          return;
+        }
+      }
       
       let session = await readSession(SESSION_PATH);
       validateSession(session);
