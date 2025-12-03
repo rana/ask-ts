@@ -6,6 +6,7 @@ import { appendFileSync } from 'node:fs';
 import type { Session, Turn } from '../types.ts';
 import { expandReferences } from './expand.ts';
 import { AskError } from './errors.ts';
+import { output } from './output.ts';
 
 /**
  * Parse session.md content into structured turns
@@ -247,7 +248,7 @@ export async function refreshExpandedFiles(
     return { refreshed: false, fileCount: 0 };
   }
   
-  console.log(`Found ${blocks.length} file references to refresh...`);
+  output.info(`Found ${blocks.length} file references to refresh...`);
   
   let lines = content.split('\n');
   let fileCount = 0;
@@ -257,7 +258,7 @@ export async function refreshExpandedFiles(
     try {
       const file = Bun.file(block.filePath);
       if (!await file.exists()) {
-        console.log(`⚠ Skipping ${block.filePath} - file no longer exists`);
+        output.warning(`Skipping ${block.filePath} - file no longer exists`);
         continue;
       }
       
@@ -287,7 +288,7 @@ export async function refreshExpandedFiles(
       fileCount++;
       
     } catch (error) {
-      console.log(`⚠ Error refreshing ${block.filePath}: ${error}`);
+      output.warning(`Error refreshing ${block.filePath}: ${error}`);
     }
   }
   

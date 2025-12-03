@@ -7,6 +7,7 @@ import { loadConfig } from '../lib/config.ts';
 import { extractRegion } from '../lib/cache.ts';
 import { expandAndSaveSession, refreshExpandedFiles } from '../lib/session.ts';
 import { estimateTokens } from '../lib/tokens.ts';
+import { output } from '../lib/output.ts';
 
 const SESSION_PATH = 'session.md';
 
@@ -47,13 +48,12 @@ export default defineCommand({
       
       // Handle refresh before normal flow
       if (refresh) {
-        console.log('Refreshing file references...');
+        output.info('Refreshing file references...');
         const { refreshed, fileCount } = await refreshExpandedFiles(SESSION_PATH);
         if (refreshed) {
-          console.log(`✓ Refreshed ${fileCount} file${fileCount > 1 ? 's' : ''}`);
-          console.log();
+          output.success(`Refreshed ${fileCount} file${fileCount > 1 ? 's' : ''}`);
         } else {
-          console.log('No file references found to refresh');
+          output.info('No file references found to refresh');
           return;
         }
       }
@@ -64,7 +64,7 @@ export default defineCommand({
       // Expand file references if present
       const { expanded, fileCount } = await expandAndSaveSession(SESSION_PATH, session);
       if (expanded) {
-        console.log(`Expanded ${fileCount} file${fileCount > 1 ? 's' : ''} in session.md`);
+        output.info(`Expanded ${fileCount} file${fileCount > 1 ? 's' : ''} in session.md`);
         
         // Re-read the session after expansion
         session = await readSession(SESSION_PATH);
@@ -72,27 +72,23 @@ export default defineCommand({
       
       const profile = await findProfile(model);
       const region = extractRegion(profile);
-      console.log(`Model: ${profile.modelId} (${region})`);
+      output.info(`Model: ${profile.modelId} ${output.parens(region)}`);
       
       const messages = turnsToMessages(session.turns);
       const modelInfo = getModelInfo(model);
       const maxTokens = config.maxTokens || modelInfo.maxTokens;
       const inputTokens = estimateTokens(messages);
 
-      console.log(`Sending: ${inputTokens.toLocaleString()} input tokens (${session.turns.length} turns)`);
+      output.info(`Sending: ${output.number(inputTokens)} tokens ${output.parens(`${session.turns.length} turns`)}`);
       if (inputTokens > 150_000) {
-        console.log('⚠ Large context - consider starting fresh with: ask init');
-      }
-
-      if (config.maxTokens) {
-        console.log(`Max tokens: ${config.maxTokens}`);
+        output.warning('Large context - consider starting fresh with: ask init');
       }
       
       const lastHumanTurn = session.turns[session.lastHumanTurnIndex]!;
       const nextTurnNumber = lastHumanTurn.number + 1;
       
       const writer = await SessionWriter.begin(SESSION_PATH, nextTurnNumber);
-      console.log('Streaming response... [ctrl+c to interrupt]');
+      output.info('Streaming response... [ctrl+c to interrupt]');
       
       let lastTokenCount = 0;
       let interrupted = false;
@@ -113,7 +109,7 @@ export default defineCommand({
               await writer.write(event.text);
               
               if (event.tokens - lastTokenCount >= 100 || event.tokens < 100) {
-                process.stdout.write(`\rStreaming response... ${event.tokens} tokens [ctrl+c to interrupt]`);
+                process.stdout.write(`\rStreaming response... ${output.number(event.tokens)} tokens ${output.dim('[ctrl+c to interrupt]')}`);
                 lastTokenCount = event.tokens;
               }
               break;
@@ -135,7 +131,7 @@ export default defineCommand({
         if (interrupted) {
           console.log(`Response interrupted after ${totalTokens} tokens`);
         } else {
-          console.log(`Response complete: ${totalTokens} output tokens`);
+          output.success(`Received: ${output.number(totalTokens)} tokens`);
         }
         
       } catch (error) {
