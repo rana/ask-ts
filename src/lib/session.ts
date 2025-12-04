@@ -56,32 +56,28 @@ export async function findAllExpandedContent(content: string): Promise<ExpandedC
 export async function refreshAllContent(
   sessionPath: string,
 ): Promise<{ refreshed: boolean; fileCount: number }> {
-  let content = await Bun.file(sessionPath).text();
+  const content = await Bun.file(sessionPath).text();
 
-  // First, expand any unexpanded references
-  const { expandReferences } = await import('./expand.ts');
-  const unexpandedPattern = /\[\[([^\]]+)\]\]/g;
-  const hasUnexpanded = unexpandedPattern.test(content);
-
-  if (hasUnexpanded) {
+  // Check for unexpanded references first
+  const unexpandedPattern = /\[\[([^\]​]+)\]\]/g;
+  if (unexpandedPattern.test(content)) {
+    // Expand them - this IS the refresh for new refs
     const { expanded, fileCount } = await expandReferences(content, 0);
     if (fileCount > 0) {
-      content = expanded;
-      // Write the expanded content
       const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
-      await Bun.write(tmpPath, content);
+      await Bun.write(tmpPath, expanded);
       const fs = await import('node:fs/promises');
       await fs.rename(tmpPath, sessionPath);
 
-      output.info(`Expanded ${fileCount} new reference${fileCount !== 1 ? 's' : ''}`);
+      return { refreshed: true, fileCount };
     }
   }
 
-  // Then find existing expansions to refresh
+  // No unexpanded refs - look for existing expansions to refresh
   const expansions = await findAllExpandedContent(content);
 
   if (expansions.length === 0) {
-    return { refreshed: hasUnexpanded, fileCount: 0 };
+    return { refreshed: false, fileCount: 0 };
   }
 
   output.info(

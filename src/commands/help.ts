@@ -27,9 +27,16 @@ const COMMANDS: Record<string, CommandHelp> = {
   },
   init: {
     name: 'init',
-    description: 'Initialize a new session.md file',
-    usage: 'ask init',
-    examples: ['ask init'],
+    description: 'Initialize a new session file',
+    usage: 'ask init [path]',
+    args: [
+      {
+        name: 'path',
+        description: 'Path for session file (default: session.md)',
+        required: false,
+      },
+    ],
+    examples: ['ask init', 'ask init session-2.md', 'ask init notes/research.md'],
   },
   cfg: {
     name: 'cfg',
