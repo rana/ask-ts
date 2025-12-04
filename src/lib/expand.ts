@@ -28,14 +28,10 @@ async function resolveFilePath(path: string): Promise<string> {
   }
 
   // Try case-insensitive match in the same directory
-  const dir = path.lastIndexOf('/') >= 0
-    ? path.substring(0, path.lastIndexOf('/'))
-    : '.';
+  const dir = path.lastIndexOf('/') >= 0 ? path.substring(0, path.lastIndexOf('/')) : '.';
   const filename = path.split('/').pop() ?? path;
 
-  const entries = await Array.fromAsync(
-    new Bun.Glob(`${dir}/*`).scan({ onlyFiles: true })
-  );
+  const entries = await Array.fromAsync(new Bun.Glob(`${dir}/*`).scan({ onlyFiles: true }));
 
   const match = entries.find((entry) => {
     const entryName = entry.split('/').pop() ?? '';
@@ -145,9 +141,7 @@ async function expandFile(
 
   const lang = languageFor(resolvedPath);
   const fence = fenceFor(content);
-  const header = turnNumber > 0
-    ? `### [${turnNumber}] ${resolvedPath}`
-    : `### ${resolvedPath}`;
+  const header = turnNumber > 0 ? `### [${turnNumber}] ${resolvedPath}` : `### ${resolvedPath}`;
 
   return {
     text: `\n${header}\n${fence}${lang}\n${content}\n${fence}\n`,

@@ -59,15 +59,20 @@ export default defineCommand({
       const profile = await findProfile(modelType);
       const region = extractRegion(profile);
 
-      output.info(`Model: ${profile.modelId} ${output.dim(`(${region})`)}`);
+      // Model and input info
+      output.meta([['Model', output.modelName(profile.modelId) + ' ' + output.dim(`(${region})`)]]);
 
       const messages = turnsToMessages(session.turns);
       const inputTokens = estimateTokens(messages);
-      output.info(
-        `Input: ${output.number(inputTokens)} tokens ${output.dim(`(${session.turns.length} turns)`)}`,
-      );
+      const turnLabel = session.turns.length === 1 ? 'turn' : 'turns';
+
+      output.meta([
+        ['Input', `${output.number(inputTokens)} tokens`],
+        ['Turns', `${session.turns.length} ${turnLabel}`],
+      ]);
 
       if (inputTokens > 150000) {
+        output.blank();
         output.warning('Large input may be slow or hit limits');
       }
 
@@ -77,28 +82,24 @@ export default defineCommand({
       let finalTokens = 0;
       let interrupted = false;
 
-      let sigintCount = 0;
+      const abortController = new AbortController();
+
       process.on('SIGINT', () => {
-        sigintCount++;
-        interrupted = true;
-        
-        if (sigintCount >= 2) {
-          // Clear streaming line and show final status
-          process.stdout.write('\r\x1b[K'); // Clear line
-          output.warning('Forced exit');
-          process.exit(130); // Standard SIGINT exit code
+        if (!interrupted) {
+          interrupted = true;
+          abortController.abort();
         }
       });
 
-      // Start streaming line
-      output.info('');
-      process.stdout.write(output.dim('Streaming... '));
+      output.blank();
+      output.write(output.dim('Streaming... '));
 
       for await (const event of streamCompletion(
         profile.arn,
         messages,
         config.maxTokens ?? 32000,
         config.temperature,
+        abortController.signal,
       )) {
         if (interrupted) break;
 
@@ -106,13 +107,15 @@ export default defineCommand({
           case 'chunk':
             await writer.write(event.text);
             finalTokens = event.tokens;
-            // Update streaming progress in place
-            process.stdout.write(
-              `\r${output.dim('Streaming...')} ${output.number(finalTokens)} tokens ${output.dim('[ctrl+c to interrupt]')}`,
+            output.progress(
+              `${output.dim('Streaming')} ${output.cyan(output.number(finalTokens))} ${output.dim('tokens')}`,
             );
             break;
           case 'error':
-            throw event.error;
+            if (!interrupted) {
+              throw event.error;
+            }
+            break;
           case 'end':
             finalTokens = event.totalTokens;
             break;
@@ -121,12 +124,11 @@ export default defineCommand({
 
       await writer.end(interrupted);
 
-      // Clear streaming line and show final status
-      process.stdout.write('\r\x1b[K'); // Clear line
+      output.clearLine();
       if (interrupted) {
-        output.warning(`Interrupted at ${output.number(finalTokens)} tokens`);
+        output.warning(`Interrupted at ${output.cyan(output.number(finalTokens))} tokens`);
       } else {
-        output.success(`Done: ${output.number(finalTokens)} tokens`);
+        output.success(`Done ${output.dim('·')} ${output.cyan(output.number(finalTokens))} tokens`);
       }
     } catch (error) {
       exitWithError(error);
