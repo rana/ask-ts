@@ -72,7 +72,7 @@ export async function expandReferences(
 
     try {
       const { text, files } = await expandReference(ref, turnNumber, config);
-      expanded = expanded.replace(match, text);
+      expanded = expanded.replace(match, () => text);
       fileCount += files;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
