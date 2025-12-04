@@ -313,15 +313,18 @@ export class SessionWriter {
   ) {}
 
   /**
-   * Begin a new streaming session
+   * Create a new streaming session (header written on first chunk)
    */
-  static async begin(path: string, turnNumber: number): Promise<SessionWriter> {
-    const writer = new SessionWriter(path, turnNumber);
-    await writer.writeHeader();
-    return writer;
+  static create(path: string, turnNumber: number): SessionWriter {
+    return new SessionWriter(path, turnNumber);
   }
 
+  /**
+   * Write the header (called automatically on first chunk)
+   */
   private async writeHeader(): Promise<void> {
+    if (this.headerWritten) return;
+
     const content = await Bun.file(this.sessionPath).text();
     const header = `\n\n# [${this.turnNumber}] AI\n\n\`\`\`\`markdown\n`;
 
@@ -333,7 +336,12 @@ export class SessionWriter {
    * Write a chunk of the response
    */
   async write(chunk: string): Promise<void> {
-    if (!this.headerWritten || !chunk) return;
+    if (!chunk) return;
+
+    // Write header on first actual content
+    if (!this.headerWritten) {
+      await this.writeHeader();
+    }
 
     appendFileSync(this.sessionPath, chunk);
     this.contentWritten = true;
@@ -343,6 +351,7 @@ export class SessionWriter {
    * End the session and prepare for next turn
    */
   async end(interrupted: boolean = false): Promise<void> {
+    // If no content was written, nothing to close
     if (!this.headerWritten) return;
 
     let closing = '';

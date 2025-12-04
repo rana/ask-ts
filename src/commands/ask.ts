@@ -72,13 +72,22 @@ export default defineCommand({
       }
 
       const nextTurnNumber = session.turns[session.turns.length - 1]!.number + 1;
-      const writer = await SessionWriter.begin(sessionPath, nextTurnNumber);
+      const writer = await SessionWriter.create(sessionPath, nextTurnNumber);
 
       let finalTokens = 0;
       let interrupted = false;
 
+      let sigintCount = 0;
       process.on('SIGINT', () => {
+        sigintCount++;
         interrupted = true;
+        
+        if (sigintCount >= 2) {
+          // Clear streaming line and show final status
+          process.stdout.write('\r\x1b[K'); // Clear line
+          output.warning('Forced exit');
+          process.exit(130); // Standard SIGINT exit code
+        }
       });
 
       // Start streaming line

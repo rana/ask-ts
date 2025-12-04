@@ -1,3 +1,4 @@
+import type { Config } from './config.ts';
 import { loadConfig } from './config.ts';
 import { filterContent, shouldFilter } from './filter.ts';
 import { languageFor } from './languages.ts';
@@ -27,10 +28,14 @@ async function resolveFilePath(path: string): Promise<string> {
   }
 
   // Try case-insensitive match in the same directory
-  const dir = path.lastIndexOf('/') >= 0 ? path.substring(0, path.lastIndexOf('/')) : '.';
+  const dir = path.lastIndexOf('/') >= 0
+    ? path.substring(0, path.lastIndexOf('/'))
+    : '.';
   const filename = path.split('/').pop() ?? path;
 
-  const entries = await Array.fromAsync(new Bun.Glob(`${dir}/*`).scan({ onlyFiles: true }));
+  const entries = await Array.fromAsync(
+    new Bun.Glob(`${dir}/*`).scan({ onlyFiles: true })
+  );
 
   const match = entries.find((entry) => {
     const entryName = entry.split('/').pop() ?? '';
@@ -63,11 +68,14 @@ export async function expandReferences(
   let expanded = content;
   let fileCount = 0;
 
+  // Load config once for all expansions
+  const config = await loadConfig();
+
   for (const [match, ref] of content.matchAll(pattern)) {
     if (!ref) continue;
 
     try {
-      const { text, files } = await expandReference(ref, turnNumber);
+      const { text, files } = await expandReference(ref, turnNumber, config);
       expanded = expanded.replace(match, text);
       fileCount += files;
     } catch (error) {
@@ -85,6 +93,7 @@ export async function expandReferences(
 async function expandReference(
   ref: string,
   turnNumber: number,
+  config: Config,
 ): Promise<{ text: string; files: number }> {
   const isRecursive = ref.endsWith('/**/');
   const isDirectory = ref.endsWith('/') || isRecursive;
@@ -94,7 +103,7 @@ async function expandReference(
     try {
       const stat = await Bun.file(ref).stat();
       if (stat.isDirectory()) {
-        return expandDirectory(ref, false, turnNumber);
+        return expandDirectory(ref, false, turnNumber, config);
       }
     } catch {
       // Not a directory or doesn't exist, try as file
@@ -103,10 +112,10 @@ async function expandReference(
 
   if (isDirectory) {
     const dir = ref.replace(/\/?\*?\*?\/$/, '');
-    return expandDirectory(dir, isRecursive, turnNumber);
+    return expandDirectory(dir, isRecursive, turnNumber, config);
   }
 
-  return expandFile(ref, turnNumber);
+  return expandFile(ref, turnNumber, config);
 }
 
 /**
@@ -115,6 +124,7 @@ async function expandReference(
 async function expandFile(
   path: string,
   turnNumber: number,
+  config: Config,
 ): Promise<{ text: string; files: number }> {
   const resolvedPath = await resolveFilePath(path);
   const file = Bun.file(resolvedPath);
@@ -125,7 +135,6 @@ async function expandFile(
 
   let content = await file.text();
 
-  const config = await loadConfig();
   if (shouldFilter(config)) {
     content = filterContent(content, resolvedPath);
   }
@@ -136,7 +145,9 @@ async function expandFile(
 
   const lang = languageFor(resolvedPath);
   const fence = fenceFor(content);
-  const header = turnNumber > 0 ? `### [${turnNumber}] ${resolvedPath}` : `### ${resolvedPath}`;
+  const header = turnNumber > 0
+    ? `### [${turnNumber}] ${resolvedPath}`
+    : `### ${resolvedPath}`;
 
   return {
     text: `\n${header}\n${fence}${lang}\n${content}\n${fence}\n`,
@@ -151,6 +162,7 @@ async function expandDirectory(
   path: string,
   recursive: boolean,
   turnNumber: number,
+  config: Config,
 ): Promise<{ text: string; files: number }> {
   const pattern = recursive ? `${path}/**/*` : `${path}/*`;
   const glob = new Bun.Glob(pattern);
@@ -159,7 +171,6 @@ async function expandDirectory(
   let fileCount = 0;
   let hasSubdirs = false;
 
-  const config = await loadConfig();
   const { exclude } = config;
 
   // Check for subdirectories (only relevant for non-recursive)
@@ -179,7 +190,7 @@ async function expandDirectory(
     if (shouldExclude(filePath, exclude)) continue;
 
     try {
-      const { text } = await expandFile(filePath, turnNumber);
+      const { text } = await expandFile(filePath, turnNumber, config);
       sections.push(text);
       fileCount++;
     } catch {
