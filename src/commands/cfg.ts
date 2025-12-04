@@ -58,6 +58,7 @@ export default defineCommand({
         }
 
         output.field('filter', config.filter ? 'on' : 'off');
+        output.field('web', config.web ? 'on' : 'off');
         output.field('exclude', `${config.exclude.length} patterns`);
 
         return;
@@ -115,19 +116,29 @@ export default defineCommand({
         }
 
         case 'filter': {
-          const enable =
-            value.toLowerCase() === 'on' ||
-            value.toLowerCase() === 'true' ||
-            value.toLowerCase() === 'yes';
+          const enable = parseBoolean(value);
+          if (enable === null) {
+            throw new AskError('Invalid value', 'Use: on/off, true/false, yes/no');
+          }
           await updateConfig('filter', enable);
           output.success(`Content filtering ${enable ? 'enabled' : 'disabled'}`);
+          break;
+        }
+
+        case 'web': {
+          const enable = parseBoolean(value);
+          if (enable === null) {
+            throw new AskError('Invalid value', 'Use: on/off, true/false, yes/no');
+          }
+          await updateConfig('web', enable);
+          output.success(`URL expansion ${enable ? 'enabled' : 'disabled'}`);
           break;
         }
 
         default:
           throw new AskError(
             `Unknown config field: ${action}`,
-            'Valid fields: model, temperature, tokens, region, filter',
+            'Valid fields: model, temperature, tokens, region, filter, web',
           );
       }
     } catch (error) {
@@ -135,3 +146,14 @@ export default defineCommand({
     }
   },
 });
+
+function parseBoolean(value: string): boolean | null {
+  const lower = value.toLowerCase();
+  if (lower === 'on' || lower === 'true' || lower === 'yes' || lower === '1') {
+    return true;
+  }
+  if (lower === 'off' || lower === 'false' || lower === 'no' || lower === '0') {
+    return false;
+  }
+  return null;
+}
