@@ -41,7 +41,6 @@ export default defineCommand({
         const configPath = getConfigPath();
 
         output.info(output.dim(`Config: ${configPath}`));
-        output.info('');
 
         output.field('model', config.model);
         output.field('temperature', String(config.temperature));

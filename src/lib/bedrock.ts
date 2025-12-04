@@ -16,7 +16,7 @@ import { loadConfig } from './config.ts';
 import { AskError } from './errors.ts';
 import { withRetry } from './retry.ts';
 
-const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const TIMEOUT_MS = 5 * 60 * 1000;
 
 let bedrockClient: BedrockClient | null = null;
 let runtimeClient: BedrockRuntimeClient | null = null;
@@ -102,7 +102,6 @@ function parseModelVersion(modelId: string): { major: number; minor: number; dat
 }
 
 export async function findProfile(modelType: ModelType): Promise<InferenceProfile> {
-  // Check cache first
   const cached = await getCachedProfile(modelType);
   if (cached) {
     return cached;
@@ -157,7 +156,6 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
     }
 
     matches.sort((a, b) => {
-      // First sort by region preference if configured
       if (preferredRegion) {
         const aPreferred = a.region === preferredRegion;
         const bPreferred = b.region === preferredRegion;
@@ -165,7 +163,6 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
         if (!aPreferred && bPreferred) return 1;
       }
 
-      // Then by version
       if (a.version.major !== b.version.major) {
         return b.version.major - a.version.major;
       }
@@ -182,7 +179,6 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
         modelId: selected.modelId,
       };
 
-      // Cache all discovered model types
       const profilesToCache: Partial<Record<ModelType, InferenceProfile>> = {};
       for (const modelType of ['opus', 'sonnet', 'haiku'] as ModelType[]) {
         const typeMatch = matches.find((m) => m.modelId.toLowerCase().includes(modelType));
@@ -201,7 +197,6 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
       return profile;
     }
 
-    // Fallback: try profile name matching
     for (const profile of allProfiles) {
       if (!profile.inferenceProfileArn) continue;
 
@@ -236,7 +231,7 @@ export async function findProfile(modelType: ModelType): Promise<InferenceProfil
         `  1. Check AWS Bedrock console for available models\n` +
         `  2. Try a different model: bun run src/cli.ts --model sonnet\n` +
         `  3. Contact AWS support to enable cross-region inference\n\n` +
-        `Visit: https://docs.aws.amazon.com/bedrock/latest/userguide/cross-region-inference.html`,
+        `Visit: https://console.aws.amazon.com/bedrock/home#/models`,
     );
   } catch (error) {
     if (error instanceof AskError) throw error;
@@ -282,13 +277,12 @@ export async function* streamCompletion(
   messages: Message[],
   maxTokens: number,
   temperature: number = 1.0,
+  abortSignal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
   const client = getRuntimeClient();
 
-  // Cap maxTokens to known safe limit
   const effectiveMaxTokens = Math.min(maxTokens, 64000);
 
-  // Log if we're capping the value
   if (maxTokens > 64000) {
     output.info(`Note: Capping maxTokens from ${maxTokens} to ${effectiveMaxTokens} (AWS limit)`);
   }
@@ -310,6 +304,15 @@ export async function* streamCompletion(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
+    // Link external abort signal to our controller
+    if (abortSignal) {
+      if (abortSignal.aborted) {
+        controller.abort();
+      } else {
+        abortSignal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
+    }
+
     try {
       const response = await withRetry(() =>
         client.send(command, {
@@ -323,9 +326,14 @@ export async function* streamCompletion(
 
       if (response.stream) {
         for await (const event of response.stream) {
+          // Check abort between events
+          if (abortSignal?.aborted) {
+            break;
+          }
+
           if (event.contentBlockDelta?.delta?.text) {
             const text = event.contentBlockDelta.delta.text;
-            const tokens = Math.ceil(text.length / 4); // Rough estimate
+            const tokens = Math.ceil(text.length / 4);
             totalTokens += tokens;
             yield { type: 'chunk', text, tokens: totalTokens };
           }
@@ -339,9 +347,17 @@ export async function* streamCompletion(
       yield { type: 'end', totalTokens };
     } catch (error: any) {
       clearTimeout(timeoutId);
-      throw error; // Re-throw to be caught by outer try
+      // Don't throw on abort - just end gracefully
+      if (abortSignal?.aborted) {
+        return;
+      }
+      throw error;
     }
   } catch (error) {
+    // Don't yield error if aborted
+    if (abortSignal?.aborted) {
+      return;
+    }
     yield { type: 'error', error: AskError.from(error) };
   }
 }
