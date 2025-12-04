@@ -2,7 +2,9 @@ import type { Config } from './config.ts';
 import { loadConfig } from './config.ts';
 import { filterContent, shouldFilter } from './filter.ts';
 import { languageFor } from './languages.ts';
+import { output } from './output.ts';
 import { shouldExclude } from './patterns.ts';
+import { expandUrl, isUrl } from './url.ts';
 
 /**
  * Calculate minimum fence length needed to safely wrap content
@@ -60,7 +62,7 @@ export async function expandReferences(
   content: string,
   turnNumber: number = 0,
 ): Promise<{ expanded: string; fileCount: number }> {
-  const pattern = /\[\[([^\]​]+)\]\]/g;
+  const pattern = /\[\[([^\]\u200B]+)\]\]/g;
   let expanded = content;
   let fileCount = 0;
 
@@ -72,9 +74,14 @@ export async function expandReferences(
 
     try {
       const { text, files } = await expandReference(ref, turnNumber, config);
-      expanded = expanded.replace(match, text);
+      expanded = expanded.replace(match, () => text);
       fileCount += files;
     } catch (error) {
+      // URL errors already logged by expandUrl, others need logging
+      if (!isUrl(ref)) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        output.fetchError(ref, message);
+      }
       const message = error instanceof Error ? error.message : 'Unknown error';
       expanded = expanded.replace(match, `\n❌ Error: ${ref} - ${message}\n`);
     }
@@ -84,13 +91,18 @@ export async function expandReferences(
 }
 
 /**
- * Expand a single reference (file or directory)
+ * Expand a single reference (file, directory, or URL)
  */
 async function expandReference(
   ref: string,
   turnNumber: number,
   config: Config,
 ): Promise<{ text: string; files: number }> {
+  // Check for URL first
+  if (isUrl(ref)) {
+    return expandUrlReference(ref, config);
+  }
+
   const isRecursive = ref.endsWith('/**/');
   const isDirectory = ref.endsWith('/') || isRecursive;
 
@@ -112,6 +124,39 @@ async function expandReference(
   }
 
   return expandFile(ref, turnNumber, config);
+}
+
+/**
+ * Expand a URL reference
+ */
+async function expandUrlReference(
+  url: string,
+  config: Config,
+): Promise<{ text: string; files: number }> {
+  // Check if URL expansion is disabled
+  if (!config.web) {
+    // Return the reference unchanged (no expansion)
+    return { text: `[[${url}]]`, files: 0 };
+  }
+
+  const result = await expandUrl(url);
+
+  // Warn if content is large (>20k chars ≈ 5k tokens)
+  if (result.content.length > 20_000) {
+    const estimatedTokens = Math.ceil(result.content.length / 4);
+    output.warning(`Large content from ${url} (≈${estimatedTokens.toLocaleString()} tokens)`);
+  }
+
+  // Build output with markers for refresh support
+  const lines: string[] = [`<!-- url: ${url} -->`];
+
+  if (result.title) {
+    lines.push('', `# ${result.title}`);
+  }
+
+  lines.push('', result.content, '', '<!-- /url -->');
+
+  return { text: '\n' + lines.join('\n') + '\n', files: 1 };
 }
 
 /**

@@ -46,11 +46,17 @@ const COMMANDS: Record<string, CommandHelp> = {
       { name: 'field', description: 'Config field to set', required: false },
       { name: 'value', description: 'Value to set', required: false },
     ],
-    examples: ['ask cfg', 'ask cfg model sonnet', 'ask cfg temperature 0.7', 'ask cfg reset'],
+    examples: [
+      'ask cfg',
+      'ask cfg model sonnet',
+      'ask cfg temperature 0.7',
+      'ask cfg web off',
+      'ask cfg reset',
+    ],
   },
   refresh: {
     name: 'refresh',
-    description: 'Refresh all expanded file and directory references',
+    description: 'Refresh all expanded file, directory, and URL references',
     usage: 'ask refresh [session]',
     args: [
       {
@@ -75,6 +81,24 @@ const COMMANDS: Record<string, CommandHelp> = {
     examples: ['ask help', 'ask help cfg'],
   },
 };
+
+const CONFIG_FIELDS = [
+  { name: 'model', description: 'AI model (opus/sonnet/haiku)', example: 'ask cfg model sonnet' },
+  {
+    name: 'temperature',
+    description: 'Response creativity (0.0-1.0)',
+    example: 'ask cfg temperature 0.7',
+  },
+  { name: 'tokens', description: 'Max output tokens (1-200000)', example: 'ask cfg tokens 8000' },
+  { name: 'region', description: 'Preferred AWS region', example: 'ask cfg region us-west-2' },
+  {
+    name: 'filter',
+    description: 'Strip comments from files (on/off)',
+    example: 'ask cfg filter off',
+  },
+  { name: 'web', description: 'Fetch URL references (on/off)', example: 'ask cfg web off' },
+  { name: 'reset', description: 'Reset all settings to defaults', example: 'ask cfg reset' },
+];
 
 function showOverview(): void {
   output.blank();
@@ -146,6 +170,17 @@ function showCommandHelp(cmdName: string): void {
     for (const opt of cmd.options) {
       const alias = opt.alias ? `${output.identifier('-' + opt.alias)}, ` : '    ';
       output.log(`  ${alias}${output.identifier('--' + opt.name.padEnd(10))} ${opt.description}`);
+    }
+  }
+
+  // Show config fields for cfg command
+  if (cmdName === 'cfg') {
+    output.blank();
+    output.log(output.dim('Config Fields'));
+    const maxField = Math.max(...CONFIG_FIELDS.map((f) => f.name.length));
+    for (const field of CONFIG_FIELDS) {
+      const padded = field.name.padEnd(maxField + 2);
+      output.log(`  ${output.identifier(padded)}${field.description}`);
     }
   }
 

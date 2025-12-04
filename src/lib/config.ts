@@ -3,55 +3,84 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { z } from 'zod';
 
+/**
+ * Default exclude patterns organized by category
+ * Single source of truth for both schema defaults and config formatting
+ */
+const DEFAULT_EXCLUDE_GROUPS = [
+  {
+    name: 'Version control',
+    patterns: ['.git/**', '.svn/**', '.hg/**'],
+  },
+  {
+    name: 'Dependencies',
+    patterns: ['node_modules/**', 'vendor/**', '*.lock', 'bun.lockb'],
+  },
+  {
+    name: 'Build outputs',
+    patterns: ['dist/**', 'build/**', 'out/**', '.next/**', '.nuxt/**', '*.min.js', '*.min.css'],
+  },
+  {
+    name: 'Test & Coverage',
+    patterns: ['test/**', 'tests/**', '__tests__/**', 'coverage/**'],
+  },
+  {
+    name: 'IDE & System',
+    patterns: ['.vscode/**', '.idea/**', '.DS_Store', 'Thumbs.db'],
+  },
+  {
+    name: 'Cache & Logs',
+    patterns: ['*.log', '.cache/**', '.turbo/**', 'tmp/**'],
+  },
+  {
+    name: 'Binary & Media',
+    patterns: [
+      '*.jpg',
+      '*.jpeg',
+      '*.png',
+      '*.gif',
+      '*.ico',
+      '*.pdf',
+      '*.zip',
+      '*.tar.gz',
+      '*.mp4',
+      '*.mov',
+      '*.woff',
+      '*.woff2',
+    ],
+  },
+  {
+    name: 'Secrets',
+    patterns: ['.env', '.env.*', '*.pem', '*.key'],
+  },
+  {
+    name: 'Project files',
+    patterns: ['.gitignore', '.dockerignore', 'LICENSE', 'LICENSE.*', 'session.md'],
+  },
+] as const;
+
+/**
+ * Flatten groups into a single array of patterns
+ */
+function getDefaultExcludePatterns(): string[] {
+  return DEFAULT_EXCLUDE_GROUPS.flatMap((group) => group.patterns);
+}
+
+/**
+ * Get all standard patterns for comparison
+ */
+function getStandardPatterns(): Set<string> {
+  return new Set(getDefaultExcludePatterns());
+}
+
 export const ConfigSchema = z.object({
   model: z.enum(['opus', 'sonnet', 'haiku']).default('opus'),
   temperature: z.number().min(0).max(1).default(1.0),
   maxTokens: z.number().int().positive().max(200000).optional(),
   region: z.string().optional(),
   filter: z.boolean().default(true),
-  exclude: z.array(z.string()).default([
-    // Version control
-    '.git/**',
-    '.svn/**',
-
-    // Dependencies
-    'node_modules/**',
-    'vendor/**',
-
-    // Build outputs
-    'dist/**',
-    'build/**',
-    'out/**',
-    '*.min.js',
-    '*.min.css',
-
-    // IDE/System
-    '.vscode/**',
-    '.idea/**',
-    '.DS_Store',
-    'Thumbs.db',
-
-    // Logs/Cache
-    '*.log',
-    '.cache/**',
-    'tmp/**',
-
-    // Binary files
-    '*.mp4',
-    '*.mov',
-    '*.zip',
-    '*.tar.gz',
-    '*.pdf',
-    '*.jpg',
-    '*.png',
-    '*.gif',
-
-    // Miscellaneous
-    'LICENSE',
-    'session.md',
-    '*.lock',
-    '.gitignore',
-  ]),
+  web: z.boolean().default(true),
+  exclude: z.array(z.string()).default(getDefaultExcludePatterns()),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -85,73 +114,61 @@ function formatConfigWithComments(config: Config): string {
     '{',
     '  // Model selection: opus (default), sonnet, or haiku',
     `  "model": "${config.model}",`,
-    '  ',
+    '',
     '  // Temperature: 0.0 (deterministic) to 1.0 (creative)',
     `  "temperature": ${config.temperature},`,
-    '  ',
+    '',
     '  // Filter comments and headers from expanded files',
     `  "filter": ${config.filter},`,
+    '',
+    '  // Fetch and expand [[https://...]] URL references',
+    `  "web": ${config.web},`,
   ];
 
   if (config.maxTokens !== undefined) {
-    lines.push('  ');
+    lines.push('');
     lines.push('  // Maximum output tokens');
     lines.push(`  "maxTokens": ${config.maxTokens},`);
   }
 
   if (config.region !== undefined) {
-    lines.push('  ');
+    lines.push('');
     lines.push('  // Preferred AWS region');
     lines.push(`  "region": "${config.region}",`);
   }
 
-  // Exclude array (always last, no trailing comma)
-  lines.push('  ');
+  // Exclude array
+  lines.push('');
   lines.push('  // File patterns to exclude from expansion');
   lines.push('  "exclude": [');
 
-  const excludeGroups = [
-    { comment: '// Version control', patterns: ['.git/**', '.svn/**'] },
-    { comment: '// Dependencies', patterns: ['node_modules/**', 'vendor/**'] },
-    {
-      comment: '// Build outputs',
-      patterns: ['dist/**', 'build/**', 'out/**', '*.min.js', '*.min.css'],
-    },
-    {
-      comment: '// IDE/System files',
-      patterns: ['.vscode/**', '.idea/**', '.DS_Store', 'Thumbs.db'],
-    },
-    { comment: '// Logs/Cache', patterns: ['*.log', '.cache/**', 'tmp/**'] },
-    {
-      comment: '// Binary files',
-      patterns: ['*.mp4', '*.mov', '*.zip', '*.tar.gz', '*.pdf', '*.jpg', '*.png', '*.gif'],
-    },
-  ];
+  const standardPatterns = getStandardPatterns();
+  const customPatterns = config.exclude.filter((p) => !standardPatterns.has(p));
 
-  const allGroupPatterns = excludeGroups.flatMap((g) => g.patterns);
-  const customPatterns = config.exclude.filter((p) => !allGroupPatterns.includes(p));
-
+  // Output standard patterns by group
   let isFirstGroup = true;
-  for (const group of excludeGroups) {
-    const groupPatterns = group.patterns.filter((p) => config.exclude.includes(p));
-    if (groupPatterns.length > 0) {
-      if (!isFirstGroup) lines.push('    ');
-      lines.push(`    ${group.comment}`);
+  for (const group of DEFAULT_EXCLUDE_GROUPS) {
+    const activePatterns = group.patterns.filter((p) => config.exclude.includes(p));
+    if (activePatterns.length === 0) continue;
 
-      groupPatterns.forEach((pattern) => {
-        lines.push(`    "${pattern}",`);
-      });
+    if (!isFirstGroup) lines.push('');
+    lines.push(`    // ${group.name}`);
 
-      isFirstGroup = false;
+    for (const pattern of activePatterns) {
+      lines.push(`    "${pattern}",`);
     }
+
+    isFirstGroup = false;
   }
 
+  // Output custom patterns
   if (customPatterns.length > 0) {
-    if (!isFirstGroup) lines.push('    ');
-    lines.push('    // Custom patterns');
-    customPatterns.forEach((pattern) => {
+    if (!isFirstGroup) lines.push('');
+    lines.push('    // Custom');
+
+    for (const pattern of customPatterns) {
       lines.push(`    "${pattern}",`);
-    });
+    }
   }
 
   // Remove trailing comma from last item
@@ -173,7 +190,7 @@ export async function loadConfig(): Promise<Config> {
     const json = stripJsonComments(text);
     const data = JSON.parse(json);
     return ConfigSchema.parse(data);
-  } catch (_error) {
+  } catch {
     return ConfigSchema.parse({});
   }
 }
