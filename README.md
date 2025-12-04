@@ -1,2 +1,2 @@
-# ask-ts
+# ask
 AI conversations through Markdown
