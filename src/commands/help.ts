@@ -147,7 +147,7 @@ function showCommandHelp(cmdName: string): void {
   }
 
   output.blank();
-  output.log(`${output.bold('ask ' + cmd.name)} ${output.dim('—')} ${cmd.description}`);
+  output.log(`${output.bold(`ask ${cmd.name}`)} ${output.dim('—')} ${cmd.description}`);
   output.blank();
 
   output.log(output.dim('Usage'));
@@ -168,8 +168,8 @@ function showCommandHelp(cmdName: string): void {
     output.blank();
     output.log(output.dim('Options'));
     for (const opt of cmd.options) {
-      const alias = opt.alias ? `${output.identifier('-' + opt.alias)}, ` : '    ';
-      output.log(`  ${alias}${output.identifier('--' + opt.name.padEnd(10))} ${opt.description}`);
+      const alias = opt.alias ? `${output.identifier(`-${opt.alias}`)}, ` : '    ';
+      output.log(`  ${alias}${output.identifier(`--${opt.name.padEnd(10)}`)} ${opt.description}`);
     }
   }
 

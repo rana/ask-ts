@@ -62,7 +62,7 @@ function isSeparatorRow(line: string): boolean {
     return false;
   }
   // Separator contains only |, -, :, and spaces
-  return /^\|[\s|:\-]+\|$/.test(trimmed);
+  return /^\|[\s|:-]+\|$/.test(trimmed);
 }
 
 /**
@@ -128,17 +128,17 @@ function buildSeparator(
 
     switch (align) {
       case 'left':
-        return ':' + dashes.slice(1);
+        return `:${dashes.slice(1)}`;
       case 'right':
-        return dashes.slice(1) + ':';
+        return `${dashes.slice(1)}:`;
       case 'center':
-        return ':' + dashes.slice(2) + ':';
+        return `:${dashes.slice(2)}:`;
       default:
         return dashes;
     }
   });
 
-  return '| ' + cells.join(' | ') + ' |';
+  return `| ${cells.join(' | ')} |`;
 }
 
 /**
@@ -207,7 +207,7 @@ function alignTable(lines: string[]): string[] {
         }
       });
 
-      result.push('| ' + cells.join(' | ') + ' |');
+      result.push(`| ${cells.join(' | ')} |`);
     }
   }
 

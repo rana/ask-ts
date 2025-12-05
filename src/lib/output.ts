@@ -76,7 +76,7 @@ export const output = {
     const formatted = items
       .map(
         ([key, val]) =>
-          `${chalk.dim(key + ':')} ${typeof val === 'number' ? val.toLocaleString() : val}`,
+          `${chalk.dim(`${key}:`)} ${typeof val === 'number' ? val.toLocaleString() : val}`,
       )
       .join(chalk.dim('  ·  '));
     console.log(`  ${formatted}`);
@@ -112,14 +112,13 @@ function truncateUrl(url: string, maxLen: number): string {
     // Keep domain, truncate path
     const availableForPath = maxLen - domain.length - 10; // "https://" + "..."
     if (availableForPath > 10) {
-      const truncatedPath = path.length > availableForPath 
-        ? path.slice(0, availableForPath) + '...'
-        : path;
+      const truncatedPath =
+        path.length > availableForPath ? `${path.slice(0, availableForPath)}...` : path;
       return `${parsed.protocol}//${domain}${truncatedPath}`;
     }
 
-    return url.slice(0, maxLen - 3) + '...';
+    return `${url.slice(0, maxLen - 3)}...`;
   } catch {
-    return url.slice(0, maxLen - 3) + '...';
+    return `${url.slice(0, maxLen - 3)}...`;
   }
 }

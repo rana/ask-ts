@@ -60,7 +60,7 @@ export default defineCommand({
       const region = extractRegion(profile);
 
       // Model and input info
-      output.meta([['Model', output.modelName(profile.modelId) + ' ' + output.dim(`(${region})`)]]);
+      output.meta([['Model', `${output.modelName(profile.modelId)} ${output.dim(`(${region})`)}`]]);
 
       const messages = turnsToMessages(session.turns);
       const inputTokens = estimateTokens(messages);

@@ -22,7 +22,7 @@ const DEFAULT_EXCLUDE_GROUPS = [
   },
   {
     name: 'Test & Coverage',
-    patterns: ['test/**', 'tests/**', '__tests__/**', 'coverage/**'],
+    patterns: ['test/**', 'tests/**', '__tests__/**', 'coverage/**', '*.test.ts', '*.spec.ts'],
   },
   {
     name: 'IDE & System',
