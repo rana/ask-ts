@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "bun run src/cli.ts",
     "build": "bun run scripts/build.ts",
-    "install": "bun run build && mv ask ~/.local/bin/ask",
+    "local-install": "bun run build && mv ask ~/.local/bin/ask",
     "test": "bun test",
     "check": "tsc --noEmit",
     "lint": "biome check .",
