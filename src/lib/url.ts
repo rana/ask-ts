@@ -128,7 +128,7 @@ function extractContent(html: string, url: string): { title: string | null; cont
   const reader = new Readability(document.cloneNode(true) as Document);
   const article = reader.parse();
 
-  if (article && article.content && article.content.trim().length > 100) {
+  if (article?.content && article.content.trim().length > 100) {
     return {
       title: article.title || null,
       content: article.content, // HTML content for Turndown
@@ -140,7 +140,9 @@ function extractContent(html: string, url: string): { title: string | null; cont
   if (body) {
     // Remove script and style elements
     const scripts = body.querySelectorAll('script, style, noscript, nav, footer, header');
-    scripts.forEach((el) => el.remove());
+    for (const el of scripts) {
+      el.remove();
+    }
 
     const html = body.innerHTML?.trim();
     if (html && html.length > 50) {

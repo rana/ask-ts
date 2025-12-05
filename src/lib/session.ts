@@ -1,100 +1,102 @@
-/**
- * Session file operations and markdown parsing
- */
-
 import { appendFileSync } from 'node:fs';
 import type { Session, Turn } from '../types.ts';
 import { AskError } from './errors.ts';
 import { expandReferences } from './expand.ts';
 import { output } from './output.ts';
+import { parseSession } from './parser.ts';
+
+export { parseSession };
 
 export interface ExpandedContent {
   type: 'directory' | 'file' | 'url';
-  pattern: string; // "src/lib/" or "README.md" or "https://..."
+  pattern: string;
   startLine: number;
   endLine: number;
-  isStandalone: boolean; // true if not inside another expansion
+  isStandalone: boolean;
 }
 
 export async function findAllExpandedContent(content: string): Promise<ExpandedContent[]> {
   const expansions: ExpandedContent[] = [];
   const lines = content.split('\n');
 
-  // Find all directory expansions
-  const dirMarkers = await findDirectoryMarkers(content);
-  for (const marker of dirMarkers) {
-    expansions.push({
-      type: 'directory',
-      pattern: marker.pattern,
-      startLine: marker.startLine,
-      endLine: marker.endLine,
-      isStandalone: true,
-    });
-  }
-
-  // Find all URL expansions
-  const urlMarkers = findUrlMarkers(lines);
-  for (const marker of urlMarkers) {
-    expansions.push({
-      type: 'url',
-      pattern: marker.url,
-      startLine: marker.startLine,
-      endLine: marker.endLine,
-      isStandalone: true,
-    });
-  }
-
-  // Find all file expansions
-  const fileBlocks = findFileBlocks(content);
-  for (const block of fileBlocks) {
-    // Check if this file is inside a directory expansion
-    const insideDir = dirMarkers.some(
-      (dir) => block.start > dir.startLine && block.end < dir.endLine,
-    );
-
-    if (!insideDir) {
-      expansions.push({
-        type: 'file',
-        pattern: block.filePath,
-        startLine: block.start,
-        endLine: block.end,
-        isStandalone: true,
-      });
-    }
-  }
-
-  return expansions;
-}
-
-interface UrlMarker {
-  url: string;
-  startLine: number;
-  endLine: number;
-}
-
-function findUrlMarkers(lines: string[]): UrlMarker[] {
-  const markers: UrlMarker[] = [];
-
+  // Find directory markers
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const startMatch = line?.match(/^<!-- url: (.+) -->$/);
-
-    if (startMatch) {
-      const url = startMatch[1]!.trim();
+    const line = lines[i]!;
+    const dirMatch = line.match(/^<!-- dir: (.+) -->$/);
+    if (dirMatch) {
+      const pattern = dirMatch[1]!;
       const startLine = i;
-
-      // Find matching end tag
       for (let j = i + 1; j < lines.length; j++) {
-        if (lines[j]?.trim() === '<!-- /url -->') {
-          markers.push({ url, startLine, endLine: j });
-          i = j; // Skip past this block
+        if (lines[j]?.trim() === '<!-- /dir -->') {
+          expansions.push({
+            type: 'directory',
+            pattern,
+            startLine,
+            endLine: j,
+            isStandalone: true,
+          });
+          i = j;
           break;
         }
       }
     }
   }
 
-  return markers;
+  // Find URL markers
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const urlMatch = line.match(/^<!-- url: (.+) -->$/);
+    if (urlMatch) {
+      const url = urlMatch[1]!;
+      const startLine = i;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j]?.trim() === '<!-- /url -->') {
+          expansions.push({
+            type: 'url',
+            pattern: url,
+            startLine,
+            endLine: j,
+            isStandalone: true,
+          });
+          i = j;
+          break;
+        }
+      }
+    }
+  }
+
+  // Find file markers (standalone, not inside dir blocks)
+  const dirRanges = expansions
+    .filter((e) => e.type === 'directory')
+    .map((e) => ({ start: e.startLine, end: e.endLine }));
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const fileMatch = line.match(/^<!-- file: (.+) -->$/);
+    if (fileMatch) {
+      // Check if inside a directory block
+      const insideDir = dirRanges.some((r) => i > r.start && i < r.end);
+      if (insideDir) continue;
+
+      const filePath = fileMatch[1]!;
+      const startLine = i;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j]?.trim() === '<!-- /file -->') {
+          expansions.push({
+            type: 'file',
+            pattern: filePath,
+            startLine,
+            endLine: j,
+            isStandalone: true,
+          });
+          i = j;
+          break;
+        }
+      }
+    }
+  }
+
+  return expansions;
 }
 
 export async function refreshAllContent(
@@ -105,8 +107,7 @@ export async function refreshAllContent(
   // Check for unexpanded references first
   const unexpandedPattern = /\[\[([^\]​]+)\]\]/g;
   if (unexpandedPattern.test(content)) {
-    // Expand them - this IS the refresh for new refs
-    const { expanded, fileCount } = await expandReferences(content, 0);
+    const { expanded, fileCount } = await expandReferences(content);
     if (fileCount > 0) {
       const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
       await Bun.write(tmpPath, expanded);
@@ -117,7 +118,6 @@ export async function refreshAllContent(
     }
   }
 
-  // No unexpanded refs - look for existing expansions to refresh
   const expansions = await findAllExpandedContent(content);
 
   if (expansions.length === 0) {
@@ -127,13 +127,13 @@ export async function refreshAllContent(
   let totalFiles = 0;
   const lines = content.split('\n');
 
-  // Process in reverse order to maintain line numbers
+  // Process in reverse order to preserve line numbers
   for (const expansion of expansions.reverse()) {
     try {
       output.refreshStart(expansion.pattern);
 
       if (expansion.type === 'directory') {
-        const { expanded, fileCount } = await expandReferences(`[[${expansion.pattern}]]`, 0);
+        const { expanded, fileCount } = await expandReferences(`[[${expansion.pattern}]]`);
 
         const expandedLines = expanded.split('\n');
         const startIdx = expandedLines.findIndex((line) => line.includes('<!-- dir:'));
@@ -152,7 +152,7 @@ export async function refreshAllContent(
           totalFiles += fileCount;
         }
       } else if (expansion.type === 'url') {
-        const { expanded, fileCount } = await expandReferences(`[[${expansion.pattern}]]`, 0);
+        const { expanded, fileCount } = await expandReferences(`[[${expansion.pattern}]]`);
 
         if (fileCount > 0) {
           const expandedLines = expanded.split('\n');
@@ -168,31 +168,33 @@ export async function refreshAllContent(
               ...newContent,
             );
 
+            output.refreshSuccess(expansion.pattern);
             totalFiles += 1;
           }
         }
-      } else {
-        const { expanded, fileCount } = await expandReferences(`[[${expansion.pattern}]]`, 0);
+      } else if (expansion.type === 'file') {
+        const { expanded, fileCount } = await expandReferences(`[[${expansion.pattern}]]`);
 
         if (fileCount > 0) {
-          const newLines = expanded
-            .split('\n')
-            .filter((line, idx, arr) =>
-              idx === 0 || idx === arr.length - 1 ? line.trim() !== '' : true,
+          const expandedLines = expanded.split('\n');
+          const startIdx = expandedLines.findIndex((line) => line.includes('<!-- file:'));
+          const endIdx = expandedLines.findIndex((line) => line.trim() === '<!-- /file -->');
+
+          if (startIdx !== -1 && endIdx !== -1) {
+            const newContent = expandedLines.slice(startIdx, endIdx + 1);
+
+            lines.splice(
+              expansion.startLine,
+              expansion.endLine - expansion.startLine + 1,
+              ...newContent,
             );
 
-          lines.splice(
-            expansion.startLine,
-            expansion.endLine - expansion.startLine + 1,
-            ...newLines,
-          );
-
-          output.refreshSuccess(expansion.pattern);
-          totalFiles += 1;
+            output.refreshSuccess(expansion.pattern);
+            totalFiles += 1;
+          }
         }
       }
-    } catch (error) {
-      // Errors already logged by expandUrl/expandReferences
+    } catch {
       output.warning(`Failed to refresh ${expansion.pattern}`);
     }
   }
@@ -207,62 +209,6 @@ export async function refreshAllContent(
   return { refreshed: true, fileCount: totalFiles };
 }
 
-/**
- * Parse session.md content into structured turns
- */
-export function parseSession(content: string): Session {
-  const turns: Turn[] = [];
-
-  // Match headers like "# [1] Human" or "# [2] AI"
-  const headerPattern = /^# \[(\d+)\] (Human|AI)$/gm;
-  const matches = Array.from(content.matchAll(headerPattern));
-
-  if (matches.length === 0) {
-    return { turns: [], lastHumanTurnIndex: -1 };
-  }
-
-  for (let i = 0; i < matches.length; i++) {
-    const match = matches[i];
-    if (!match || match.index === undefined) continue;
-
-    const number = parseInt(match[1]!, 10);
-    const role = match[2] as 'Human' | 'AI';
-
-    // Extract content between headers
-    const startPos = match.index + match[0].length;
-    const nextMatch = matches[i + 1];
-    const endPos = nextMatch?.index ?? content.length;
-    let turnContent = content.slice(startPos, endPos).trim();
-
-    // Strip markdown wrapper from AI responses
-    if (role === 'AI' && turnContent.startsWith('````markdown')) {
-      turnContent = turnContent
-        .replace(/^````markdown\n/, '')
-        .replace(/\n````$/, '')
-        .trim();
-    }
-
-    if (turnContent) {
-      turns.push({ number, role, content: turnContent });
-    }
-  }
-
-  // Find last human turn
-  let lastHumanTurnIndex = -1;
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const turn = turns[i];
-    if (turn && turn.role === 'Human') {
-      lastHumanTurnIndex = i;
-      break;
-    }
-  }
-
-  return { turns, lastHumanTurnIndex };
-}
-
-/**
- * Read and parse session file
- */
 export async function readSession(path: string): Promise<Session> {
   const file = Bun.file(path);
   const content = await file.text();
@@ -278,25 +224,19 @@ export async function expandAndSaveSession(
     return { expanded: false, fileCount: 0 };
   }
 
-  // Use the same pattern as expandReferences to check for actual references
   const pattern = /\[\[([^\]​]+)\]\]/g;
   if (!pattern.test(lastHumanTurn.content)) {
     return { expanded: false, fileCount: 0 };
   }
 
-  const { expanded, fileCount } = await expandReferences(
-    lastHumanTurn.content,
-    lastHumanTurn.number,
-  );
+  const { expanded, fileCount } = await expandReferences(lastHumanTurn.content);
 
   if (fileCount === 0) {
     return { expanded: false, fileCount: 0 };
   }
 
-  // Read the full file content
   const fullContent = await Bun.file(path).text();
 
-  // Find and replace the last human turn content
   const turnHeader = `# [${lastHumanTurn.number}] Human`;
   const turnIndex = fullContent.lastIndexOf(turnHeader);
 
@@ -304,12 +244,10 @@ export async function expandAndSaveSession(
     throw new Error('Could not find turn header in session file');
   }
 
-  // Find the end of this turn (start of next turn or end of file)
   const afterHeader = turnIndex + turnHeader.length;
   const nextTurnMatch = fullContent.indexOf('\n# [', afterHeader);
   const endOfTurn = nextTurnMatch === -1 ? fullContent.length : nextTurnMatch;
 
-  // Reconstruct the file with expanded content
   const newContent =
     fullContent.slice(0, afterHeader) +
     '\n\n' +
@@ -317,20 +255,15 @@ export async function expandAndSaveSession(
     '\n' +
     fullContent.slice(endOfTurn);
 
-  // Write atomically using fs.rename
   const tmpPath = `${path}.tmp-${Date.now()}`;
   await Bun.write(tmpPath, newContent);
 
-  // Use fs.rename instead of moveTo
   const fs = await import('node:fs/promises');
   await fs.rename(tmpPath, path);
 
   return { expanded: true, fileCount };
 }
 
-/**
- * Validate session is ready for processing
- */
 export function validateSession(session: Session): void {
   if (session.turns.length === 0) {
     throw new AskError(
@@ -351,7 +284,6 @@ export function validateSession(session: Session): void {
     );
   }
 
-  // Check if already has response
   const lastTurn = session.turns[session.turns.length - 1];
   if (lastTurn && lastTurn.role === 'AI' && lastTurn.number > lastHumanTurn.number) {
     throw new AskError(
@@ -361,9 +293,6 @@ export function validateSession(session: Session): void {
   }
 }
 
-/**
- * Stream writer for appending AI responses
- */
 export class SessionWriter {
   private headerWritten = false;
   private contentWritten = false;
@@ -373,16 +302,10 @@ export class SessionWriter {
     private turnNumber: number,
   ) {}
 
-  /**
-   * Create a new streaming session (header written on first chunk)
-   */
   static create(path: string, turnNumber: number): SessionWriter {
     return new SessionWriter(path, turnNumber);
   }
 
-  /**
-   * Write the header (called automatically on first chunk)
-   */
   private async writeHeader(): Promise<void> {
     if (this.headerWritten) return;
 
@@ -393,13 +316,9 @@ export class SessionWriter {
     this.headerWritten = true;
   }
 
-  /**
-   * Write a chunk of the response
-   */
   async write(chunk: string): Promise<void> {
     if (!chunk) return;
 
-    // Write header on first actual content
     if (!this.headerWritten) {
       await this.writeHeader();
     }
@@ -408,11 +327,7 @@ export class SessionWriter {
     this.contentWritten = true;
   }
 
-  /**
-   * End the session and prepare for next turn
-   */
   async end(interrupted: boolean = false): Promise<void> {
-    // If no content was written, nothing to close
     if (!this.headerWritten) return;
 
     let closing = '';
@@ -427,9 +342,6 @@ export class SessionWriter {
   }
 }
 
-/**
- * Convert turns to Bedrock message format
- */
 export function turnsToMessages(turns: Turn[]): import('../types.ts').Message[] {
   return turns.map((turn) => ({
     role: turn.role === 'Human' ? 'user' : 'assistant',
@@ -439,91 +351,4 @@ export function turnsToMessages(turns: Turn[]): import('../types.ts').Message[] 
       },
     ],
   }));
-}
-
-interface DirectoryMarker {
-  pattern: string;
-  startLine: number;
-  endLine: number;
-}
-
-export async function findDirectoryMarkers(content: string): Promise<DirectoryMarker[]> {
-  const lines = content.split('\n');
-  const markers: DirectoryMarker[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const startMatch = line?.match(/^<!-- dir: (.+) -->$/);
-
-    if (startMatch) {
-      const pattern = startMatch[1]!.trim();
-      const startLine = i;
-
-      // Find matching end tag
-      for (let j = i + 1; j < lines.length; j++) {
-        if (lines[j]?.trim() === '<!-- /dir -->') {
-          markers.push({ pattern, startLine, endLine: j });
-          i = j; // Skip past this block
-          break;
-        }
-      }
-    }
-  }
-
-  return markers;
-}
-
-interface FileBlock {
-  start: number;
-  end: number;
-  filePath: string;
-  fence: string;
-  lang: string;
-}
-
-function findFileBlocks(content: string): FileBlock[] {
-  const lines = content.split('\n');
-  const blocks: FileBlock[] = [];
-
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Look for: ### filepath
-    if (line?.startsWith('### ')) {
-      const filePath = line.substring(4).trim();
-      const start = i;
-
-      // Next line should be code fence
-      i++;
-      if (i >= lines.length) break;
-
-      const fenceLine = lines[i];
-      const fenceMatch = fenceLine?.match(/^(`{3,})(\w*)/);
-      if (!fenceMatch) continue;
-
-      const fence = fenceMatch[1] || '```';
-      const lang = fenceMatch[2] || '';
-
-      // Find closing fence
-      i++;
-      while (i < lines.length && lines[i] !== fence) {
-        i++;
-      }
-
-      if (i < lines.length) {
-        blocks.push({
-          start,
-          end: i,
-          filePath,
-          fence,
-          lang,
-        });
-      }
-    }
-
-    i++;
-  }
-
-  return blocks;
 }
