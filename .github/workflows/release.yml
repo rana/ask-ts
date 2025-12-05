@@ -26,7 +26,7 @@ jobs:
           bun-version: latest
       
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
       
       - name: Get version info
         id: version
@@ -51,33 +51,33 @@ jobs:
           sed -i "s/'__GIT_COMMIT__'/'${COMMIT}'/" src/lib/version.ts
           sed -i "s/'__BUILD_DATE__'/'${DATE}'/" src/lib/version.ts
           
-          echo "Building for linux-x64..."
-          bun build --compile --target=bun-linux-x64 src/cli.ts --outfile=ask-linux-x64
+          echo "Building for linux-amd64..."
+          bun build --compile --target=bun-linux-x64 src/cli.ts --outfile=ask-linux-amd64
           
           echo "Building for linux-arm64..."
           bun build --compile --target=bun-linux-arm64 src/cli.ts --outfile=ask-linux-arm64
           
-          echo "Building for darwin-x64..."
-          bun build --compile --target=bun-darwin-x64 src/cli.ts --outfile=ask-darwin-x64
+          echo "Building for darwin-amd64..."
+          bun build --compile --target=bun-darwin-x64 src/cli.ts --outfile=ask-darwin-amd64
           
           echo "Building for darwin-arm64..."
           bun build --compile --target=bun-darwin-arm64 src/cli.ts --outfile=ask-darwin-arm64
           
-          echo "Building for windows-x64..."
-          bun build --compile --target=bun-windows-x64 src/cli.ts --outfile=ask-windows-x64.exe
+          echo "Building for windows-amd64..."
+          bun build --compile --target=bun-windows-x64 src/cli.ts --outfile=ask-windows-amd64.exe
 
       - name: Create archives
         run: |
           VERSION=${{ steps.version.outputs.version }}
           
-          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+          for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
             mv ask-${platform} ask
             tar -cJf ask-${VERSION}-${platform}.tar.xz ask
             rm ask
           done
           
-          mv ask-windows-x64.exe ask.exe
-          zip ask-${VERSION}-windows-x64.zip ask.exe
+          mv ask-windows-amd64.exe ask.exe
+          zip ask-${VERSION}-windows-amd64.zip ask.exe
           rm ask.exe
       
       - name: Generate checksums
