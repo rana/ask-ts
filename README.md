@@ -2,7 +2,7 @@
 
 AI conversations through Markdown files.
 
-Write thoughts in a markdown file, reference files `[[path]]` and URLs [[url]], run `ask`, and Claude AI responds directly in the file. Markdown is the conversation — editable, searchable, flexible.
+Write thoughts in markdown, reference files `[[path]]` and URLs `[[url]]`, run the `ask` CLI tool, and Claude AI responds directly in your file. Markdown is the AI conversation — editable, searchable, and flexible.
 
 ---
 
@@ -13,7 +13,7 @@ A `session.md` file before running `ask`:
 ```markdown
 # [1] Human
 
-I'm refactoring the authentication module.
+I'm refactoring an authentication module.
 
 [[src/auth/]]
 
@@ -25,7 +25,7 @@ After running `ask`, your files expand and Claude responds:
 ```markdown
 # [1] Human
 
-I'm refactoring the authentication module.
+I'm refactoring an authentication module.
 
 <!-- dir: src/auth/ -->
 ### src/auth/login.ts
@@ -44,16 +44,18 @@ Looking at your current implementation, I'd suggest...
 
 ```
 
-Add your next thought to `# [3] Human` and run `ask` again.
+Add your next thought to the `# [3] Human` section, and run `ask` again.
 
 ---
 
 ## Workflow
 
-Edit `session.md` in your editor. Run `ask` in the terminal. The response streams into the file.
+- Edit `session.md` in your editor.
+- Run `ask` in the terminal.
 
-<img width="2170" height="2096" alt="ask-workflow" src="https://github.com/user-attachments/assets/32284b2a-186d-4cfa-86c1-b09f8ecf7531" />
+A Claude AI response streams into your file.
 
+Here's what the terminal looks like after using `ask`.
 ```
 $ ask
   Model: claude-opus-4-5 (us-west-2)
@@ -63,6 +65,8 @@ $ ask
 ```
 
 That's the whole loop: think, write, ask, continue.
+
+<img width="2170" height="2096" alt="ask-workflow" src="https://github.com/user-attachments/assets/32284b2a-186d-4cfa-86c1-b09f8ecf7531" />
 
 ---
 
