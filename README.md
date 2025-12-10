@@ -2,7 +2,7 @@
 
 AI conversations through Markdown files.
 
-Write your thoughts in a markdown file, reference your code with `[[path]]`, run `ask`, and Claude AI responds directly in the file. The markdown is the conversation — editable, searchable, yours.
+Write thoughts in a markdown file, reference files `[[path]]` and URLs [[url]], run `ask`, and Claude AI responds directly in the file. Markdown is the conversation — editable, searchable, flexible.
 
 ---
 
@@ -183,6 +183,6 @@ Run ask help <command> for details
 
 ## Philosophy
 
-The session file is a source of truth — not a database, not a chat window. Thinking lives in markdown where you edit, search, and back it up.
+The session file is a source of truth — not a database, not a chat window. Thinking lives in markdown where you work.
 
 `ask` stays out of your way. Write naturally, reference what matters, let Claude respond in the same file. Different conversations save to different files. Keep it simple.
