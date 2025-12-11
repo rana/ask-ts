@@ -4,12 +4,13 @@ AI conversations through Markdown files.
 
 Write thoughts in markdown, reference files `[[path]]` and URLs `[[url]]`, run the `ask` CLI tool, and Claude AI responds directly in your file. Markdown is the AI conversation — editable, searchable, and flexible.
 
----
-
 ## Example
 
-A `session.md` file before running `ask`:
+- Create a `session.md` file.
+- Edit `session.md` in an editor.
+- Run `ask` at a terminal.
 
+Here's a `session.md` file before running `ask`.
 ```markdown
 # [1] Human
 
@@ -17,11 +18,10 @@ I'm refactoring an authentication module.
 
 [[src/auth/]]
 
-What approaches would you suggest for adding OAuth support?
+What are some well-factored approaches?
 ```
 
-After running `ask`, your files expand and Claude responds:
-
+After running `ask`, your files expand and Claude AI streams a response to your file.
 ```markdown
 # [1] Human
 
@@ -34,7 +34,7 @@ I'm refactoring an authentication module.
 ...
 <!-- /dir -->
 
-What approaches would you suggest for adding OAuth support?
+What are some well-factored approaches?
 
 # [2] AI
 
@@ -46,29 +46,9 @@ Looking at your current implementation, I'd suggest...
 
 Add your next thought to the `# [3] Human` section, and run `ask` again.
 
----
-
-## Workflow
-
-- Edit `session.md` in your editor.
-- Run `ask` in the terminal.
-
-A Claude AI response streams into your file.
-
-Here's what the terminal looks like after using `ask`.
-```
-$ ask
-  Model: claude-opus-4-5 (us-west-2)
-  Input: 54,131 tokens  ·  Turns: 9 turns
-
-✓ Done · 219 tokens
-```
-
 That's the whole loop: think, write, ask, continue.
 
 <img width="2170" height="2096" alt="ask-workflow" src="https://github.com/user-attachments/assets/32284b2a-186d-4cfa-86c1-b09f8ecf7531" />
-
----
 
 ## Install
 
@@ -86,8 +66,6 @@ sudo mv ask /usr/local/bin/
 
 **Windows:** Download from [releases](https://github.com/rana/ask/releases), extract, add to PATH.
 
----
-
 ## Quick Start
 
 ```bash
@@ -96,8 +74,6 @@ ask init            # Create session.md
                     # Edit session.md with your question
 ask                 # Run the conversation
 ```
-
----
 
 ## File & URL References
 
@@ -125,8 +101,6 @@ Comments and headers are stripped by default to reduce tokens. Disable with `ask
 
 To refresh expanded content: `ask refresh`
 
----
-
 ## Configuration
 
 ```bash
@@ -138,8 +112,6 @@ ask cfg web off           # Disable URL fetching
 ```
 
 Run `ask help cfg` for all options.
-
----
 
 ## AWS Setup
 
@@ -153,8 +125,6 @@ Run `ask help cfg` for all options.
 aws configure
 # Enter: Access Key ID, Secret Access Key, region (e.g., us-west-2)
 ```
-
----
 
 ## Commands
 
@@ -182,8 +152,6 @@ Examples
 
 Run ask help <command> for details
 ```
-
----
 
 ## Philosophy
 
