@@ -1,5 +1,5 @@
-import { parseHTML } from 'linkedom';
 import { Readability } from '@mozilla/readability';
+import { parseHTML } from 'linkedom';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 import { output } from './output.ts';

@@ -191,9 +191,18 @@ async function expandDirectory(
     }
   }
 
+  // Collect all file paths first
+  const filePaths: string[] = [];
   for await (const filePath of glob.scan({ onlyFiles: true })) {
     if (shouldExclude(filePath, exclude)) continue;
+    filePaths.push(filePath);
+  }
 
+  // Sort alphabetically with numeric awareness
+  filePaths.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  // Expand in sorted order
+  for (const filePath of filePaths) {
     try {
       const { text } = await expandFile(filePath, config);
       sections.push(text);
@@ -206,7 +215,7 @@ async function expandDirectory(
   if (sections.length === 0) {
     if (hasSubdirs) {
       return {
-        text: `\n### ${path}/\n\n*(contains only subdirectories - use [​[${path}/**/]​] for recursive)*\n`,
+        text: `\n### ${path}/\n\n*(contains only subdirectories - use [[${path}/**/]] for recursive)*\n`,
         files: 0,
       };
     }
@@ -225,3 +234,4 @@ async function expandDirectory(
     files: fileCount,
   };
 }
+
